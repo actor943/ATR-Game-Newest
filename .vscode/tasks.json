@@ -1,0 +1,53 @@
+{
+    // ============================================================
+    //  ATR Game — 常用任务（全部走项目自带 venv 的解释器）
+    //  在 IDE 里 Ctrl/Cmd+Shift+P → “Tasks: Run Task” 即可挑一个执行
+    // ============================================================
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "运行应用",
+            "type": "process",
+            "command": "${workspaceFolder}/venv/bin/python",
+            "args": ["-u", "main.py"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "group": { "kind": "build", "isDefault": true }
+        },
+        {
+            "label": "自检：掼蛋",
+            "type": "process",
+            "command": "${workspaceFolder}/venv/bin/python",
+            "args": ["-m", "games.guandan.selftest"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "presentation": { "reveal": "always", "panel": "dedicated" }
+        },
+        {
+            "label": "自检：国际象棋",
+            "type": "process",
+            "command": "${workspaceFolder}/venv/bin/python",
+            "args": ["-m", "games.chess.selftest"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "presentation": { "reveal": "always", "panel": "dedicated" }
+        },
+        {
+            "label": "自检：局域网联机",
+            "type": "process",
+            "command": "${workspaceFolder}/venv/bin/python",
+            "args": ["-m", "core.net.selftest"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "presentation": { "reveal": "always", "panel": "dedicated" }
+        },
+        {
+            "label": "安装/同步依赖",
+            "type": "process",
+            "command": "${workspaceFolder}/venv/bin/python",
+            "args": ["-m", "pip", "install", "-r", "requirements.txt"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "presentation": { "reveal": "always", "panel": "dedicated" }
+        }
+    ]
+}

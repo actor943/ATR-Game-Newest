@@ -1,0 +1,46 @@
+{
+    // ============================================================
+    //  ATR Game — IDE 配置
+    //  解释器固定用项目自带的 venv（Python 3.14），别用系统 / Homebrew 的
+    //  因为只有这个 venv 里装了 flet 1.0.0（应用运行只依赖它）
+    // ============================================================
+
+    // 默认解释器：CodeBuddy / VSCode 的 Python 扩展启动时会读这一项
+    "python.defaultInterpreterPath": "${workspaceFolder}/venv/bin/python",
+
+    // 打开终端时自动激活该虚拟环境
+    "python.terminal.activateEnvironment": true,
+    "python.terminal.launchArgs": ["-u"],
+
+    // 类型检查用 basic 档：项目里有不少动态写法，strict 会满屏误报
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.extraPaths": ["."],
+
+    // 本项目用 `python -m xxx.selftest` 跑自检，不是 pytest/unittest 发现，
+    // 关掉自动发现避免误报
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": false,
+
+    // venv 有 5000+ 文件，排除掉能让索引/搜索快很多
+    "files.exclude": {
+        "**/venv": true,
+        "**/__pycache__": true,
+        "**/.git": true,
+        "**/build": true,
+        "**/dist": true
+    },
+    "search.exclude": {
+        "**/venv": true,
+        "**/__pycache__": true,
+        "**/build": true,
+        "**/dist": true
+    },
+    "files.watcherExclude": {
+        "**/venv/**": true,
+        "**/__pycache__/**": true
+    },
+
+    // 源码统一按 UTF-8
+    "files.encoding": "utf8",
+    "files.eol": "\n"
+}

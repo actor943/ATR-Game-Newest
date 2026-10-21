@@ -1,0 +1,26 @@
+# ATR Game 0.4.8 — 依赖清单
+#
+# 结论先说：**应用运行时只依赖 flet 一个第三方库**，其余全部是 Python 标准库
+# （asyncio / collections / dataclasses / datetime / enum / json / logging /
+#  math / os / pathlib / platform / random / typing / uuid / argparse）。
+# 安装：pip install -r requirements.txt
+# 环境：Python ≥ 3.10（本机 venv 实测 3.14.3）
+#
+# ⚠ 版本必须是 flet 1.0.x：代码里用的是 1.0 的 API
+#   （Dropdown.on_select、page.show_dialog / pop_dialog、ft.Button、ft.Icons…），
+#   0.85 上这些写法会直接报错。
+
+flet==1.0.0
+
+# ---------------------------------------------------------------------
+# 【可选】房间语音聊天。缺了不影响启动，只是房间页提示「未安装」，
+# 手机端打包用不上 PortAudio，也就不会绑死这套原生库。
+# ---------------------------------------------------------------------
+numpy>=1.26
+sounddevice>=0.4.6
+
+# ---------------------------------------------------------------------
+# 以下只在「打包分发」或「重新生成图标」时才需要，日常跑游戏不用装。
+# ---------------------------------------------------------------------
+# flet-cli==1.0.0      # flet build apk/app/ipa 的命令行入口（./build_dist.sh 用）
+# Pillow>=10.0         # 仅重新生成 assets/icon.png（1024×1024 应用图标）时用

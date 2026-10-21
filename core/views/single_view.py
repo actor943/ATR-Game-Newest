@@ -1,0 +1,55 @@
+# -*- coding: utf-8 -*-
+"""单人游戏：所有已注册的游戏都收在这一页里（陪 AI 玩 / 单机工具）。
+
+0.4.7 起主菜单不再把游戏图标直接摊在首页 —— 游戏变多了首页也不会变成图标墙。
+界面风格由 :mod:`core.ui_theme` 分发（默认材料风 / 暗黑2 石砖风 / 社区包）。
+"""
+
+from __future__ import annotations
+
+import flet as ft
+
+from core import registry
+from core import ui_theme as ui
+from core.registry import NavigateFn
+
+
+def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
+    items = registry.menu_items()
+
+    def go(path: str):
+        def _handler(_e):
+            navigate(path)
+        return _handler
+
+    cards: list[ft.Control] = []
+    for item in items:
+        cards.append(
+            ui.card(item.title, item.description, item.icon,
+                    go(item.home_path), available=item.available, width=300)
+        )
+    cards.append(
+        ui.card("更多游戏", "跳刀 / 斗地主 / 跑得快……敬请期待。",
+                "🎴", available=False, width=300)
+    )
+
+    grid = ft.Column(
+        [ft.Row(cards[i:i + 2], wrap=True, spacing=12, run_spacing=12)
+         for i in range(0, len(cards), 2)],
+        spacing=12,
+    )
+
+    body = ft.Column(
+        [
+            ui.text("单人游戏", 22, "", ft.FontWeight.BOLD),
+            ft.Container(height=4),
+            ui.text("挑一款，自己和 AI（或本地工具）玩。", 13, "secondary"),
+            ft.Container(height=20),
+            grid,
+            ft.Container(expand=True),
+        ],
+        spacing=0,
+        horizontal_alignment=ft.CrossAxisAlignment.START,
+    )
+
+    return ui.page("单人游戏", body, on_back=lambda _e: navigate("/"))

@@ -1,0 +1,463 @@
+# -*- coding: utf-8 -*-
+"""多人游戏：创建房间 / 搜索房间（局域网 UDP 广播发现）。
+
+房间怎么被别人找到
+------------------
+创建房间那一刻，本机开始**每隔一秒向整个局域网广播**一句「这里有个房间」：
+房间名、玩什么、房主是谁、几个人、以及房间控制端口。同一 WiFi 下的伙伴在
+「搜索房间」里会看到它们自动冒出来，不需要任何服务器，也不需要记 IP。
+
+房间码
+------
+每个房间带一个 6 位房间码（默认随机，也可以自己起）。看到房间只是第一步，
+**输对房间码才能进**。上次建房间用的房间码会存在本地，下次再建时自动填上 ——
+老朋友下次聚会不用再想新口令，也不用再翻聊天记录。
+
+界面风格
+--------
+本页所有零件都走 :mod:`core.ui_theme`（默认材料风 / 暗黑2 石砖风 / 社区包），
+自己不写死颜色；设置页切换后整页跟着换皮。
+"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Dict, List, Optional
+
+import flet as ft
+
+from core import registry
+from core import ui_theme as ui
+from core.net.discovery import RoomInfo, RoomScanner
+from core.net.session import RoomSession, current as session_current, set_current
+from core.profile import Profile, normalize_code, random_code
+from core.registry import NavigateFn
+from core.router import Router
+
+ROUTE = "/multiplayer"
+SCAN_POLL = 0.9        # 列表刷新间隔（秒）
+
+
+def _goto(navigate: NavigateFn, path: str) -> None:
+    """跳转前丢掉这条路由的缓存。
+
+    房间页必须每次重建：换一个房间就是另一拨人和另一张席位表，
+    拿缓存出来的旧控件会把上一间的痕迹带进来。
+    """
+    router = Router.current
+    if router is not None:
+        router.invalidate(path)
+    navigate(path)
+
+
+def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
+    state: Dict[str, object] = {
+        "tab": "create",
+        "profile": Profile.load(),
+        "scanner": None,
+        "rooms": [],
+        "busy": False,
+    }
+    profile: Profile = state["profile"]          # type: ignore[assignment]
+    nick = profile.ensure_nick()                 # 没起过名就先随机一个
+
+    # ---------------- 组件 ----------------
+
+    name_ref = ft.Ref[ft.TextField]()
+    code_ref = ft.Ref[ft.TextField]()
+    nick_ref = ft.Ref[ft.TextField]()
+    tip = ui.hint("")
+    tab_title = ui.hint("建立房间", "primary")
+
+    # 游戏列表：只列已经能玩的游戏
+    games = [it for it in registry.menu_items() if it.available]
+
+    # 表单容器：**不 expand**。放在可滚动的 Column 里还 expand，
+    # 它会把剩余高度全吃掉、把下面的按钮顶出屏幕
+    # （0.4.7 之前「看不到建立房间按钮」就是这么来的）。
+    form_area = ft.Column(spacing=0)
+
+    def stop_scan() -> None:
+        scanner: Optional[RoomScanner] = state["scanner"]  # type: ignore[assignment]
+        if scanner is not None:
+            scanner.stop()
+            state["scanner"] = None
+        state["rooms"] = []
+
+    def render_create(_e=None) -> None:
+        stop_scan()
+        state["tab"] = "create"
+        tab_title.value = "建立房间"
+        tab_title.color = ui.tone("primary")
+        _fill_form_area()
+
+    def render_search(_e=None) -> None:
+        state["tab"] = "search"
+        tab_title.value = "搜索房间"
+        tab_title.color = ui.tone("primary")
+        _fill_form_area()
+        _start_scan()
+
+    # ---------------- 创建房间 ----------------
+
+    # 选游戏 / 选席位用「按钮组」而不是 Dropdown：
+    # flet 1.0 的 Dropdown 一旦落在 expand 的 Column 里，选项浮层会被拉成
+    # 一块盖住半个屏幕的灰色矩形（用户看到的「没有底的诡异窗口」）。
+    game_pick = games[0].id if games else ""
+
+    def _default_seats(gid: str) -> str:
+        """按游戏的「上场人数」给一个合理的默认席位（可再加位子扩容观战）。"""
+        p = registry.game_players(gid)
+        return str(p) if p in (2, 3, 4, 5, 6, 8) else "4"
+
+    seat_pick = _default_seats(game_pick)
+
+    def _set_game(value: str) -> None:
+        nonlocal game_pick, seat_pick
+        game_pick = value
+        seat_pick = _default_seats(value)   # 换游戏顺手把席位数调到合适的默认
+        _fill_form_area()
+
+    def _set_seats(value: str) -> None:
+        nonlocal seat_pick
+        seat_pick = value
+        _fill_form_area()
+
+    def roll_code(_e=None) -> None:
+        if code_ref.current is not None:
+            code_ref.current.value = random_code()
+            page.update()
+
+    def do_create(_e=None) -> None:
+        if state.get("busy"):
+            return                      # 防止网络慢时狂点导致重复开房
+        name = (name_ref.current.value if name_ref.current else "").strip()
+        code = normalize_code(
+            code_ref.current.value if code_ref.current else "")
+        if not name:
+            tip.value = "先给房间起个名字"
+            tip.color = ui.tone("danger")
+            page.update()
+            return
+        if len(code) < 4:
+            tip.value = "房间码至少 4 位"
+            tip.color = ui.tone("danger")
+            page.update()
+            return
+        game_id = game_pick or (games[0].id if games else "")
+        game_title = next((g.title for g in games if g.id == game_id),
+                          game_id)
+        seats = int(seat_pick or 4)
+
+        my_nick = (nick_ref.current.value if nick_ref.current else "").strip() \
+            or nick
+        if my_nick != nick:
+            profile.set_nick(my_nick)
+
+        state["busy"] = True
+        session = RoomSession.create(name, game_id, game_title, code,
+                                     profile.ensure_nick(), seats=seats)
+        state["busy"] = False
+        if session is None:
+            tip.value = "开房失败：本机 UDP 端口用不了？（网络权限？）"
+            tip.color = ui.tone("danger")
+            page.update()
+            return
+        # 记下这次的名字与房间码，下次自动带上（set_current 会顺手关掉旧房间）
+        profile.remember_room(name, code)
+        set_current(session)
+        state["tab"] = "left"
+        stop_scan()
+        # 创建成功直接进房间：房间页头部就有房间码/房主/席位，反馈足够，
+        # 不必再弹确认框（之前弹框导致点完卡在表单页、狂点才进）。
+        _goto(navigate, "/room")
+
+    # ---------------- 搜索房间 ----------------
+
+    def _room_row(info: RoomInfo) -> ft.Control:
+        full = info.started or info.taken >= info.seats
+        return ui.panel(
+            ft.Row(
+                [
+                    ft.Column(
+                        [
+                            ui.text(info.name or "（无名房间）", 14, "",
+                                    ft.FontWeight.BOLD),
+                            ui.text(f"{info.game_title} · 房主 {info.host} · "
+                                     f"{info.ip}", 11, "dim"),
+                        ],
+                        spacing=2, expand=True,
+                    ),
+                    ui.pill(info.label, tone="danger" if full else "gold"),
+                    ft.Container(width=8),
+                    ui.button("进入", "🚪", lambda _e, i=info: _ask_code(i),
+                              primary=not full, enabled=not full, height=36),
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            )
+        )
+
+    def _ask_code(info: RoomInfo) -> None:
+        """弹一个小框要房间码；输对了才发出加入请求。"""
+        code_box = ft.TextField(
+            value="", hint_text="房间码（房主那儿问）",
+            border=ft.InputBorder.OUTLINE, text_size=14,
+            color=ui.colors().text, bgcolor=ui.colors().ink,
+            capitalization=ft.TextCapitalization.CHARACTERS,
+        )
+        err = ui.hint("")
+
+        def confirm(_e=None) -> None:
+            code = normalize_code(code_box.value or "")
+            if len(code) < 4:
+                err.value = "房间码至少 4 位"
+                err.color = ui.tone("danger")
+                page.update()
+                return
+            page.pop_dialog()
+            _do_join(info, code)
+
+        page.show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                bgcolor=ui.colors().surface,
+                title=ui.text(f"进入 {info.name}", 15, ""),
+                content=ft.Column(
+                    [
+                        ui.hint(f"房主：{info.host} · {info.game_title}"),
+                        ft.Container(height=8),
+                        ft.Container(content=code_box,
+                                     border=ft.Border.all(
+                                         1, ui.colors().border),
+                                     border_radius=8,
+                                     padding=ft.Padding.symmetric(
+                                         horizontal=8, vertical=2)),
+                        err,
+                    ],
+                    spacing=4, tight=True,
+                ),
+                actions=[
+                    ft.TextButton(content=ui.text("取消", 13, "dim"),
+                                  on_click=lambda _e: page.pop_dialog()),
+                    ft.TextButton(content=ui.text("进入", 13, "primary",
+                                                  ft.FontWeight.BOLD),
+                                  on_click=confirm),
+                ],
+            )
+        )
+
+    def _do_join(info: RoomInfo, code: str) -> None:
+        tip.value = f"正在加入「{info.name}」…"
+        tip.color = ui.tone("primary")
+        page.update()
+        session = RoomSession.join(info, code, profile.ensure_nick())
+        if session is None:
+            tip.value = "加入失败：本机 UDP 端口用不了？"
+            tip.color = ui.tone("danger")
+            page.update()
+            return
+        page.run_task(_wait_join, session, info.name)
+
+    async def _wait_join(session: RoomSession, room_name: str) -> None:
+        """等房主回话：加入成功才跳进房间页，失败就留在原地提示。"""
+        for _ in range(50):                     # 最多等 5 秒
+            for kind, payload in session.drain():
+                if kind == "joined":
+                    state["tab"] = "left"
+                    stop_scan()
+                    set_current(session)
+                    _goto(navigate, "/room")
+                    return
+                if kind in ("join_failed", "kicked"):
+                    session.close()
+                    tip.value = f"进不去：{payload}"
+                    tip.color = ui.tone("danger")
+                    page.update()
+                    return
+            await asyncio.sleep(0.1)
+        session.close()
+        tip.value = "房主没有回应（可能已经关了房间，或不在同一局域网）"
+        tip.color = ui.tone("danger")
+        page.update()
+
+    # ---------------- 扫描循环 ----------------
+
+    def _start_scan() -> None:
+        scanner: Optional[RoomScanner] = state["scanner"]  # type: ignore[assignment]
+        if scanner is None:
+            scanner = RoomScanner()
+            if not scanner.start():
+                tip.value = "扫描端口被占用了（已经有一个搜索在跑？）"
+                tip.color = ui.tone("danger")
+                page.update()
+                return
+            state["scanner"] = scanner
+        page.run_task(_poll_scan)
+
+    async def _poll_scan() -> None:
+        """每 SCAN_POLL 秒把新扫到的房间刷进列表（房间没了也会自动消失）。"""
+        scanner: Optional[RoomScanner] = state["scanner"]  # type: ignore[assignment]
+        while scanner is not None and state["tab"] == "search":
+            rooms = scanner.rooms()
+            state["rooms"] = rooms
+            _fill_form_area()
+            await asyncio.sleep(SCAN_POLL)
+
+    # ---------------- 画面拼装 ----------------
+
+    def _create_body() -> List[ft.Control]:
+        game_options = [(g.id, g.title) for g in games] \
+            or [("", "（暂无可用游戏）")]
+        return [
+            ui.panel(
+                ft.Column(
+                    [
+                        ui.field("房间名", profile.last_room_name
+                                 or f"{nick}的房间", ref=name_ref),
+                        ft.Container(height=12),
+                        ft.Row(
+                            [
+                                ui.field(
+                                    "房间码",
+                                    profile.last_room_code or random_code(),
+                                    hint_="4~8 位，同伴进房间要用",
+                                    max_length=8, ref=code_ref),
+                                ft.Container(width=10),
+                                ft.Container(
+                                    content=ui.button("随机", None, roll_code,
+                                                      height=36, width=80),
+                                    padding=ft.Padding.only(top=18),
+                                ),
+                            ],
+                            vertical_alignment=ft.CrossAxisAlignment.START,
+                        ),
+                        ft.Container(height=12),
+                        ui.text("游戏", 11, "dim", spacing=1.0),
+                        ft.Container(height=6),
+                        ft.Row(
+                            [
+                                ui.chip(label, active=(value == game_pick),
+                                        on_click=(
+                                            lambda _e, v=value: _set_game(v)))
+                                for value, label in game_options
+                            ],
+                            spacing=6, wrap=True,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                        ft.Container(height=6),
+                        ui.hint("人数多于本局所需时，多出来的人自动转为观战。"),
+                        ft.Container(height=14),
+                        ui.text("席位", 11, "dim", spacing=1.0),
+                        ft.Container(height=6),
+                        ft.Row(
+                            [
+                                ui.chip(f"{i} 人", active=(str(i) == seat_pick),
+                                        on_click=(
+                                            lambda _e, v=str(i): _set_seats(v)))
+                                for i in (2, 3, 4, 5, 6, 8)
+                            ],
+                            spacing=6, wrap=True,
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                        ft.Container(height=12),
+                        ui.field("你的名字", nick, ref=nick_ref,
+                                 hint_="房间里别人看到的名字，随时可在「我的」里改"),
+                        ft.Container(height=14),
+                        ft.Row([ui.button("建立房间", "⚒", do_create,
+                                          height=48, width=220)],
+                               alignment=ft.MainAxisAlignment.CENTER),
+                    ],
+                    spacing=0,
+                ),
+                padding=16,
+            ),
+            ft.Container(height=12),
+            ui.hint("房间建好后，同一 WiFi / 局域网里的伙伴在"
+                    "「搜索房间」里就能看到；把房间码口头报给他才能进。"),
+        ]
+
+    def _search_body() -> List[ft.Control]:
+        rooms: List[RoomInfo] = state["rooms"]       # type: ignore[assignment]
+        if not rooms:
+            return [
+                ui.panel(
+                    ft.Column(
+                        [
+                            ui.text("🧭 正在搜索局域网里的房间…", 14, ""),
+                            ft.Container(height=6),
+                            ui.hint("让开房间的伙伴先建好房间，两边的电脑"
+                                    "要在同一个 WiFi / 局域网下。"),
+                        ],
+                        spacing=0,
+                    ),
+                    padding=16,
+                )
+            ]
+        return [_room_row(r) for r in rooms]
+
+    def _fill_form_area() -> None:
+        # 只包一层面板：以前 _create_body 自带 panel、这里又包一层，
+        # 双层边框 + 外层 expand 把内容顶飞，就是「没有底的诡异窗口」
+        body = _create_body() if state["tab"] == "create" else _search_body()
+        form_area.controls = body
+        try:
+            form_area.update()
+        except Exception:                            # noqa: BLE001
+            page.update()
+
+    # ---------------- 页面骨架 ----------------
+
+    def on_back(_e=None) -> None:
+        state["tab"] = "left"        # 让扫描协程自然收摊，别在后台空转
+        stop_scan()
+        navigate("/")
+
+    def on_enter_room(_e=None) -> None:
+        """已经开过房间的话，从这里直接进。"""
+        session = session_current()
+        if session is None:
+            tip.value = "还没建房间：先在上面填一下，点「建立房间」。"
+            tip.color = ui.tone("danger")
+            page.update()
+            return
+        _goto(navigate, "/room")
+
+    tabs = ft.Row(
+        [
+            ft.Container(content=ui.button("建立房间", "⚒", render_create,
+                                           height=40), expand=True),
+            ft.Container(width=10),
+            ft.Container(content=ui.button("搜索房间", "🧭", render_search,
+                                           height=40), expand=True),
+        ],
+    )
+
+    # 竖排放「进入房间」：房间已经开好的话，这一颗随时能进
+    enter_row = ft.Container(
+        content=ui.button("进入房间", "🚪", on_enter_room, height=44),
+        padding=ft.Padding.only(top=6),
+    )
+
+    body = ft.Column(
+        [
+            ui.title("多人游戏", 22),
+            ft.Container(height=6),
+            ui.hint(f"你的名字：{nick}"),
+            ft.Container(height=14),
+            tabs,
+            ft.Container(height=12),
+            tab_title,
+            ft.Container(height=8),
+            form_area,
+            ft.Container(height=12),
+            enter_row,
+            ft.Container(height=6),
+            tip,
+        ],
+        spacing=0,
+        scroll=ft.ScrollMode.AUTO,
+        expand=True,
+    )
+
+    render_create()
+    return ui.page("多人游戏", body, on_back=on_back)

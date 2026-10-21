@@ -1,0 +1,50 @@
+[project]
+name = "atr-game"
+version = "0.4.8"
+description = "ATR Game — 牌类游戏合集（掼蛋 / Splendor / Chess / Chinese Chess）"
+readme = "README.txt"
+requires-python = ">=3.10"
+dependencies = [
+    # 必须 1.0.x：代码用的是 flet 1.0 的 API（on_select / show_dialog / ft.Button…）
+    "flet==1.0.0",
+]
+
+# ---------------------------------------------------------------
+# Flet 打包配置（flet build apk / macos / ipa 都会读这里的 [tool.flet]）
+# 文档：https://flet.dev/docs/publish
+# ---------------------------------------------------------------
+[tool.flet]
+# 应用显示名（窗口标题 / 桌面图标名 / 各平台应用名）
+product = "ATR Game"
+# 反色域名，决定各平台的包标识（bundle id / application id）
+org = "com.atrgame"
+# 制品名前缀（apk 输出 ATR Game-release.apk 之类）
+artifact = "ATR Game"
+company = "ATR Game"
+copyright = "Copyright © 2026 ATR Game"
+
+# 入口模块（flet build 默认找 main.py）
+[tool.flet.app]
+# 显式指定入口文件是 main.py（或者去掉 .py 后缀的模块名）
+module = "main"
+# 不打进安装包的东西：两个 venv、缓存、个人音乐、构建产物
+exclude = [
+    "venv",
+    ".venv",
+    "__pycache__",
+    "*.pyc",
+    "build",
+    "dist",
+    "assets/Songs",
+]
+
+# Android：自适应图标底色用主题蓝；不给敏感权限
+[tool.flet.android]
+adaptive_icon_background = "#1976D2"
+
+# 启动画面配色（跟主题一致，避免闪白）
+[tool.flet.splash]
+color = "#1976D2"
+dark_color = "#121212"
+icon_bgcolor = "#1976D2"
+icon_dark_bgcolor = "#121212"
