@@ -31,17 +31,19 @@ jobs:
         with:
           python-version: '3.12'
 
-      # ⚠ flet 版本必须与 app 代码一致（当前是 1.0.0）。
+      # ⚠ flet 版本必须与 app 代码一致（当前是 1.0.4）。
       #   代码用的是 1.0 的 API：page.window / page.show_dialog /
       #   Dropdown.on_select / ft.Button / ft.Icons。
       #   若这里装 0.85.3，bundle 里的运行时与 Flutter 客户端版本不匹配，
       #   运行起来就是「白屏、无响应、窗口模式也不生效」。
-      #   统一从 requirements.txt 安装，避免三处版本号各写各的。
+      #   注意：决定「打包进 .app 的运行时版本」的是 pyproject.toml 的
+      #   project.dependencies，不是这里；这里只决定构建用的 Flutter 客户端。
+      #   所以版本号要与 pyproject.toml / requirements.txt 三处对齐，
+      #   千万别只改 workflow 这一处。
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install flet-cli==1.0.0
           python -c "import flet, flet_cli; print('flet build runtime:', flet.__version__)"
 
       - name: Build ${{ matrix.target }}

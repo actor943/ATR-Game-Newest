@@ -27,15 +27,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-PY="./.venv/bin/python"
-command -v "$PY" >/dev/null || { echo "找不到 $PY，请确认在项目根目录运行"; exit 1; }
+PY="./venv/bin/python"
+[ -x "$PY" ] || { echo "找不到 $PY，请确认在项目根目录运行（venv 需要用 pyproject.toml 装一次）"; exit 1; }
 
 # flet 的命令行入口（venv 里的 flet 脚本 shebang 可能失效，直接用模块调）
 flet() { "$PY" -c "import sys; sys.argv[0]='flet'; from flet.cli import main; main()" "$@"; }
 
 target="${1:-all}"
 
-echo "==> 目标：$target   应用：ATR Game 0.4.6"
+echo "==> 目标：$target   应用：ATR Game 0.4.8"
 echo "==> 输出目录：$(pwd)/dist"
 
 case "$target" in

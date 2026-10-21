@@ -11,13 +11,19 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.resolve()
 ENTRY_FILE = PROJECT_ROOT / "main.py"
+# 必须用项目 venv 的解释器来跑 flet build：直接调 "flet" 会命中 PATH 里的
+# 其它版本（本机就有个 Python 3.9 的旧 flet），构建出来的运行时版本会错配。
+VENV_PYTHON = PROJECT_ROOT / "venv" / "bin" / "python"
 
 # 需要确保被包含的文件/目录（Flet 默认会包含项目文件，此处显式声明以防遗漏）
 INCLUDE_ITEMS = ["assets", "*.json", "*.txt", "*.csv"]  # 按需修改
 
 def run_build(target: str, extra_args: list = None):
     """执行 flet build 命令"""
-    cmd = ["flet", "build", target, str(PROJECT_ROOT)]
+    # 用 `-c` 调模块入口，等价于 `flet build`，但解释器锁定为项目 venv
+    cmd = [str(VENV_PYTHON), "-c",
+           "import sys; sys.argv[0]='flet'; from flet.cli import main; main()",
+           "build", target, str(PROJECT_ROOT)]
     
     # 确保包含关键资源
     for item in INCLUDE_ITEMS:

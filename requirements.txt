@@ -7,10 +7,18 @@
 # 环境：Python ≥ 3.10（本机 venv 实测 3.14.3）
 #
 # ⚠ 版本必须是 flet 1.0.x：代码里用的是 1.0 的 API
-#   （Dropdown.on_select、page.show_dialog / pop_dialog、ft.Button、ft.Icons…），
+#   （Dropdown.on_select、page.show_dialog / pop_dialog、page.window、ft.Button、ft.Icons…），
 #   0.85 上这些写法会直接报错。
+# ⚠ 三处必须一致：这里 / pyproject.toml 的 project.dependencies / CI workflow。
+#   其中 **pyproject.toml 才是决定「打包进 .app 的运行时版本」的那一个**
+#   （flet build 会把 project.dependencies 转成 requirements 装进 bundle）；
+#   CI 里装的版本只决定 Flutter 客户端。只改其中一处会再次造成
+#   「客户端与运行时版本错配」→ 运行起来白屏、窗口模式不生效。
 
-flet==1.0.0
+# ⚠ 用 [all] 把 flet-cli / flet-desktop / flet-web 一起锁到同版本：
+#   flet 自己只在 extras 里钉这几个子包，裸装 flet 不会带上它们，
+#   结果就是本地跑不了桌面版、CI 也没有 flet build 可用。
+flet[all]==1.0.4
 
 # ---------------------------------------------------------------------
 # 【可选】房间语音聊天。缺了不影响启动，只是房间页提示「未安装」，

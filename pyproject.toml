@@ -5,8 +5,11 @@ description = "ATR Game — 牌类游戏合集（掼蛋 / Splendor / Chess / Chi
 readme = "README.txt"
 requires-python = ">=3.10"
 dependencies = [
-    # 必须 1.0.x：代码用的是 flet 1.0 的 API（on_select / show_dialog / ft.Button…）
-    "flet==1.0.0",
+    # ⚠ 这个 pin 决定「打包进 .app 的 Python 运行时版本」（flet build 会把
+    #   project.dependencies 转成 requirements 装进 bundle），必须与 app 代码
+    #   用的 API 版本一致：代码用的是 1.0 的 API（page.window / show_dialog /
+    #   Dropdown.on_select / ft.Button / ft.Icons）。改版本时这里要一起改。
+    "flet==1.0.4",
 ]
 
 # ---------------------------------------------------------------
