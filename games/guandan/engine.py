@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import rules
 from .cards import (
@@ -39,7 +39,7 @@ from .cards import (
     build_deck,
     sort_hand,
 )
-from .rules import Combo
+from .rules import Combo, ComboType
 from .tribute import Tribute
 
 NUM_PLAYERS = 4
@@ -130,36 +130,73 @@ class Hand:
     发牌之后如果上一手留有进贡安排（``match.pending_tribute``），会先建立
     :class:`Tribute` 状态机放在 ``self.tribute`` 上——掼蛋是**先发牌再进贡**，
     进贡用的就是这一手刚发好的牌。``self.tribute`` 走完（或无需进贡）后才开始打牌。
+
+    联机时本机不洗牌：房主发好牌后把整手局面广播下来，客人用
+    ``Hand(match, dealt=...)`` 直接采用（见 :func:`load_match`）。
     """
 
-    def __init__(self, match: MatchState):
+    def __init__(self, match: MatchState, dealt: Optional[Dict[str, Any]] = None):
         self.match = match
         self.ctx = match.ctx
-        deck = build_deck()
-        match.rng.shuffle(deck)
-        self.hands: List[List[Card]] = [
-            sort_hand(deck[i * HAND_SIZE:(i + 1) * HAND_SIZE], self.ctx)
-            for i in range(NUM_PLAYERS)
-        ]
-        self.out_order: List[int] = []
         self.moves: List[Move] = []
-        self.turn: int = match.next_leader
-        self.current: Optional[Combo] = None   # 当前待压的牌型
-        self.combo_owner: int = -1
-        self.passes = 0
-        self.ended: bool = False
+        if dealt is None:
+            deck = build_deck()
+            match.rng.shuffle(deck)
+            self.hands: List[List[Card]] = [
+                sort_hand(deck[i * HAND_SIZE:(i + 1) * HAND_SIZE], self.ctx)
+                for i in range(NUM_PLAYERS)
+            ]
+            self.out_order: List[int] = []
+            self.turn: int = match.next_leader
+            self.current: Optional[Combo] = None   # 当前待压的牌型
+            self.combo_owner: int = -1
+            self.passes = 0
+            self.ended: bool = False
+        else:
+            hands_raw = dealt["hands"]
+            if (not isinstance(hands_raw, (list, tuple))
+                    or len(hands_raw) != NUM_PLAYERS):
+                raise ValueError("快照里的手牌不是 4 家")
+            hands: List[List[Card]] = []
+            for raw in hands_raw:
+                cards = cards_from_json(raw)
+                if cards is None:
+                    raise ValueError("快照里的手牌解析失败")
+                hands.append(cards)
+            self.hands = hands
+            self.out_order = list(dealt["out_order"])
+            self.turn = int(dealt["turn"])
+            self.current = _combo_from_json(dealt.get("current"))
+            self.combo_owner = int(dealt["combo_owner"])
+            self.passes = int(dealt["passes"])
+            self.ended = bool(dealt["ended"])
+            # 这一手自己的级牌背景：settle 之后 match.level_rank 已经变成下一手
+            # 的级牌，而**这一手**的牌面排序 / 逢人配判定仍按发牌时的级牌
+            # （0.4.8-fix：客人若用 match.ctx，刚结束那手会牌序错乱）。
+            ctx_raw = dealt.get("ctx")
+            if isinstance(ctx_raw, dict):
+                try:
+                    self.ctx = GameContext(
+                        str(ctx_raw["level"]),
+                        tuple(int(x) for x in ctx_raw.get("owners", (0, 1))))
+                except (KeyError, TypeError, ValueError):
+                    pass
 
         # 进贡阶段（用刚发好的牌执行；None 表示这一手不用进贡）
-        plan = match.pending_tribute
-        if plan is not None:
-            match.pending_tribute = None
-            self.tribute: Optional[Tribute] = Tribute(self, plan)
-            # 抗贡时没有换牌动作（apply 不会被调用），这里先把先出方定下来：
-            # 抗贡 = 原来的收贡方（头游）先出；正常进贡则由 apply() 改成末游。
-            if self.tribute.refused:
-                self.turn = self.tribute.first_leader()
+        if dealt is None:
+            plan = match.pending_tribute
+            if plan is not None:
+                match.pending_tribute = None
+                self.tribute: Optional[Tribute] = Tribute(self, plan)
+                # 抗贡时没有换牌动作（apply 不会被调用），这里先把先出方定下来：
+                # 抗贡 = 原来的收贡方（头游）先出；正常进贡则由 apply() 改成末游。
+                if self.tribute.refused:
+                    self.turn = self.tribute.first_leader()
+            else:
+                self.tribute = None
         else:
-            self.tribute = None
+            # 联网：进贡进度也由房主的快照还原（迟到的观战者看到一致的状态）
+            self.tribute = _tribute_from_json(self, dealt.get("tribute"))
 
     # ---------------- 查询 ----------------
 
@@ -327,3 +364,242 @@ def plan_tribute(out_order: Sequence[int]) -> TributePlan:
         receivers = (first,)
     return TributePlan(out_order=out, payers=payers, receivers=receivers,
                        double=double)
+
+
+# ============================================================
+# 网络同步：整场 + 当前一手 的序列化 / 还原（房主权威，JSON 友好）
+# ============================================================
+#
+# 联机对局里**只有房主洗牌**：房主把 ``serialize_match`` 的结果广播给所有人，
+# 客人 ``load_match`` 之后与本机局面完全一致（级数、手牌、进贡进度、轮到谁）。
+# 之后每有一个动作，房主就重推一次快照，客人按 ``seq`` 只接受更新的快照 ——
+# 乱序 / 重传的旧快照直接丢弃，天然收敛，不存在「各玩各的」。
+
+
+def card_to_json(card: Card) -> List[Any]:
+    return [card.rank, card.suit, card.copy_index]
+
+
+def card_from_json(raw: Any) -> Optional[Card]:
+    if not isinstance(raw, (list, tuple)) or len(raw) != 3:
+        return None
+    try:
+        return Card(str(raw[0]), str(raw[1]), int(raw[2]))
+    except (TypeError, ValueError):
+        return None
+
+
+def cards_to_json(cards: Sequence[Card]) -> List[List[Any]]:
+    return [card_to_json(c) for c in cards]
+
+
+def cards_from_json(raw: Any) -> Optional[List[Card]]:
+    if not isinstance(raw, (list, tuple)):
+        return None
+    out: List[Card] = []
+    for item in raw:
+        card = card_from_json(item)
+        if card is None:
+            return None
+        out.append(card)
+    return out
+
+
+def _combo_to_json(combo: Optional[Combo]) -> Optional[Dict[str, Any]]:
+    if combo is None:
+        return None
+    return {"t": combo.type.value, "c": cards_to_json(combo.cards),
+            "sz": combo.size, "k": combo.main_key, "w": combo.wilds_used,
+            "label": combo.label}
+
+
+def _combo_from_json(raw: Any) -> Optional[Combo]:
+    if not isinstance(raw, dict):
+        return None
+    try:
+        ctype = ComboType(str(raw["t"]))
+    except ValueError:
+        return None
+    cards = cards_from_json(raw.get("c"))
+    if cards is None:
+        return None
+    try:
+        return Combo(type=ctype, cards=tuple(cards), size=int(raw["sz"]),
+                     main_key=int(raw["k"]), wilds_used=int(raw.get("w", 0)),
+                     label=str(raw.get("label", "")))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _plan_to_json(plan: Optional[TributePlan]) -> Optional[Dict[str, Any]]:
+    if plan is None:
+        return None
+    return {"out": list(plan.out_order), "payers": list(plan.payers),
+            "receivers": list(plan.receivers), "double": plan.double}
+
+
+def _plan_from_json(raw: Any) -> Optional[TributePlan]:
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return TributePlan(
+            out_order=tuple(int(x) for x in raw["out"]),
+            payers=tuple(int(x) for x in raw["payers"]),
+            receivers=tuple(int(x) for x in raw["receivers"]),
+            double=bool(raw["double"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _card_map_to_json(mapping: Dict[int, Card]) -> Dict[str, List[Any]]:
+    return {str(k): card_to_json(v) for k, v in mapping.items()}
+
+
+def _card_map_from_json(raw: Any) -> Dict[int, Card]:
+    out: Dict[int, Card] = {}
+    if not isinstance(raw, dict):
+        return out
+    for k, v in raw.items():
+        try:
+            seat = int(k)
+        except (TypeError, ValueError):
+            continue
+        card = card_from_json(v)
+        if card is not None:
+            out[seat] = card
+    return out
+
+
+def _tribute_to_json(tr: Optional[Tribute]) -> Optional[Dict[str, Any]]:
+    if tr is None:
+        return None
+    return {"plan": _plan_to_json(tr.plan),
+            "gifts": _card_map_to_json(tr.gifts),
+            "picks": _card_map_to_json(tr.picks),
+            "returns": _card_map_to_json(tr.returns),
+            "return_picks": _card_map_to_json(tr.return_picks),
+            "pairs": {str(k): int(v) for k, v in tr.pairs.items()},
+            # refused / choose_gift 是**发牌那一刻**按当时手牌定下的
+            # （抗贡方可能随后把大王打出去），不能按当前手牌重算 ——
+            # 否则联机客人会看到一个已经不存在的进贡面板（0.4.8-fix）
+            "refused": tr.refused,
+            "choose_gift": tr.choose_gift,
+            "refuse_holders": list(tr.refuse_holders)}
+
+
+def _tribute_from_json(hand: "Hand", raw: Any) -> Optional[Tribute]:
+    """按快照还原进贡状态机。"""
+    if not isinstance(raw, dict):
+        return None
+    plan = _plan_from_json(raw.get("plan"))
+    if plan is None:
+        return None
+    tr = Tribute(hand, plan)
+    tr.gifts = _card_map_from_json(raw.get("gifts"))
+    tr.picks = _card_map_from_json(raw.get("picks"))
+    tr.returns = _card_map_from_json(raw.get("returns"))
+    tr.return_picks = _card_map_from_json(raw.get("return_picks"))
+    pairs = raw.get("pairs")
+    if isinstance(pairs, dict):
+        for k, v in pairs.items():
+            try:
+                tr.pairs[int(k)] = int(v)
+            except (TypeError, ValueError):
+                continue
+    if "refused" in raw:
+        tr.refused = bool(raw["refused"])
+    if "choose_gift" in raw:
+        tr.choose_gift = bool(raw["choose_gift"])
+    holders = raw.get("refuse_holders")
+    if isinstance(holders, (list, tuple)):
+        try:
+            tr.refuse_holders = tuple(int(x) for x in holders)
+        except (TypeError, ValueError):
+            pass
+    return tr
+
+
+def _hand_to_json(hand: Hand) -> Dict[str, Any]:
+    return {
+        "hands": [cards_to_json(h) for h in hand.hands],
+        "out_order": list(hand.out_order),
+        "turn": hand.turn,
+        "current": _combo_to_json(hand.current),
+        "combo_owner": hand.combo_owner,
+        "passes": hand.passes,
+        "ended": hand.ended,
+        "tribute": _tribute_to_json(hand.tribute),
+        # 这一手发牌时的级牌背景（见 Hand.__init__ 的 dealt 分支）
+        "ctx": {"level": hand.ctx.level,
+                "owners": list(hand.ctx.owner_teams)},
+    }
+
+
+def _result_to_json(r: Optional[HandResult]) -> Optional[Dict[str, Any]]:
+    if r is None:
+        return None
+    return {"out_order": list(r.out_order), "winner_team": r.winner_team,
+            "upgrade": r.upgrade, "levels_after": list(r.levels_after),
+            "match_over": r.match_over}
+
+
+def result_from_json(raw: Any) -> Optional[HandResult]:
+    """还原一手牌的结算结果（联机客人显示「下一局 / 整场结束」面板用）。"""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return HandResult(
+            out_order=[int(x) for x in raw["out_order"]],
+            winner_team=int(raw["winner_team"]),
+            upgrade=int(raw["upgrade"]),
+            levels_after=(str(raw["levels_after"][0]),
+                          str(raw["levels_after"][1])),
+            match_over=bool(raw["match_over"]))
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+
+
+def serialize_match(match: MatchState, hand: Hand,
+                    result: Optional[HandResult] = None) -> Dict[str, Any]:
+    """导出整场 + 当前一手的完整局面（可被 JSON 编码，联机广播用）。
+
+    ``result`` 是当前一手的结算（房主 ``_after_action`` 后的 ``self.result``），
+    客人靠它渲染结算面板 —— 一手牌由谁走完不一定，客人不能只靠自己本地推导。
+    """
+    return {
+        "levels": list(match.levels),
+        "next_leader": match.next_leader,
+        "hand_no": match.hand_no,
+        "winner": match.winner,
+        "level_rank": match.level_rank,
+        "level_owner": list(match.level_owner),
+        "pending_tribute": _plan_to_json(match.pending_tribute),
+        "res": _result_to_json(result),
+        "hand": _hand_to_json(hand),
+    }
+
+
+def load_match(match: MatchState, raw: Dict[str, Any]) -> Optional[Hand]:
+    """把房主广播的整场局面写进 ``match``，返回重建出的当前一手。
+
+    任何字段缺失 / 非法都返回 ``None``（调用方应忽略这帧，继续用旧局面），
+    不抛异常 —— 网络线程里不能炸。
+    """
+    if not isinstance(raw, dict):
+        return None
+    try:
+        levels = [str(x) for x in raw["levels"]]
+        if len(levels) != 2:
+            return None
+        winner = raw.get("winner")
+        match.levels = levels
+        match.next_leader = int(raw["next_leader"])
+        match.hand_no = int(raw["hand_no"])
+        match.winner = None if winner is None else int(winner)
+        match.level_rank = str(raw["level_rank"])
+        match.level_owner = tuple(int(x) for x in raw["level_owner"])
+        match.pending_tribute = _plan_from_json(raw.get("pending_tribute"))
+        hand = Hand(match, dealt=raw["hand"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return hand

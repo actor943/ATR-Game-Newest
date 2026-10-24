@@ -18,33 +18,42 @@ from pathlib import Path
 from typing import Dict
 
 from core import history_view as _hv
+from core.i18n import t
 from core.registry import NavigateFn
 
 GAME_ID = "guandan"
 HISTORY_PATH = "/g/guandan/history"
 
+# 落盘文件头部的键是中文（历史文件已经写成那样了，不跟着语言变）
+META_TIME = "生成时间"
+META_STATE = "状态"
+META_WIN = "胜方"
+META_HANDS = "局数"
+META_DRAW = "未分胜负"
+
 
 def _summary(path: Path, meta: Dict[str, str]) -> str:
     """列表上显示的一行摘要：时间 + 状态 + 谁赢 + 打了几局。"""
-    when = meta.get("生成时间") or _hv._stamp_from_name(path)
-    state = meta.get("状态", "")
-    win = meta.get("胜方", "")
-    hands = meta.get("局数", "")
+    when = meta.get(META_TIME) or _hv._stamp_from_name(path)
+    state = meta.get(META_STATE, "")
+    win = meta.get(META_WIN, "")
+    hands = meta.get(META_HANDS, "")
     parts = [when]
     if state:
         parts.append(state)
     if win:
         # 「未分胜负」是中途退出的记录，后面不能再跟「获胜」
-        parts.append(win if win == "未分胜负" else f"{win}获胜")
+        parts.append(win if win == META_DRAW
+                     else t("history.win_suffix", win=win))
     if hands:
-        parts.append(f"{hands} 局")
+        parts.append(t("history.hands", n=hands))
     return " · ".join(parts)
 
 
-def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
+def build(page, navigate: NavigateFn) -> ft.Control:
     """掼蛋历史记录页（委托给通用历史页，按 guandan 字段定制摘要）。"""
     return _hv.build_history(
-        page, navigate, game_id=GAME_ID, title="历史记录",
+        page, navigate, game_id=GAME_ID, title=t("guandan.history"),
         back_route="/g/guandan", summary_fn=_summary)
 
 

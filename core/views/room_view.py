@@ -30,6 +30,7 @@ from typing import List, Optional
 import flet as ft
 
 from core import ui_theme as ui
+from core.i18n import t
 from core.net import session as _sess
 from core.net.session import RoomSession
 from core.net.voice import AUDIO_OK
@@ -46,6 +47,19 @@ GAME_ROOM_ROUTE = {
     "guandan": "/g/guandan/play",
     "chess": "/g/chess/play",
 }
+
+
+def _enter_game_route(navigate: NavigateFn, route: str) -> None:
+    """进对局页前先丢掉路由缓存。
+
+    0.4.8-fix：开始游戏后有人停在旧对局 / 各玩各的，根因之一就是牌桌视图被
+    路由器缓存复用——上一局（甚至上一款游戏）的实例连网回调都没换。象棋早就
+    这么处理了，现在**所有游戏一视同仁**：每次进对局都重建视图，重新判断
+    本地 / 联网并接管网络回调。
+    """
+    if Router.current is not None:
+        Router.current.invalidate(route)
+    navigate(route)
 
 
 class _Lobby:
@@ -76,11 +90,11 @@ class _Lobby:
         session = self.session
         if session is None:                     # 兜底：没房间就别硬待在这儿
             return ui.page(
-                "多人房间",
+                t("room.title"),
                 ui.panel(ft.Column([
-                    ui.text("这里现在没有房间。", 14, ""),
+                    ui.text(t("room.empty"), 14, ""),
                     ft.Container(height=10),
-                    ui.button("回多人游戏", "🧭",
+                    ui.button(t("room.back_mp"), "🧭",
                               lambda _e: self.navigate("/multiplayer")),
                 ], spacing=0)),
                 on_back=lambda _e: self.navigate("/multiplayer"),
@@ -106,17 +120,18 @@ class _Lobby:
             ],
             spacing=0, scroll=ft.ScrollMode.AUTO, expand=True,
         )
-        self.system(f"进入房间「{session.info.name}」· "
-                    f"{session.info.game_title}")
+        self.system(t("room.entered", name=session.info.name,
+                      game=session.info.game_title))
         self._render_seats()
-        return ui.page("多人房间", body, on_back=self._on_leave)
+        return ui.page(t("room.title"), body, on_back=self._on_leave)
 
     # ---------------- 各区块 ----------------
 
     def _head(self, session: RoomSession) -> ft.Control:
-        self.head_info.value = (f"房主 {session.info.host} · "
-                                f"{session.info.game_title} · "
-                                f"{session.info.ip}:{session.info.port}")
+        self.head_info.value = t("room.head_info", host=session.info.host,
+                                 game=session.info.game_title,
+                                 addr=f"{session.info.ip}:"
+                                      f"{session.info.port}")
         return ui.panel(
             ft.Column(
                 [
@@ -126,9 +141,10 @@ class _Lobby:
                     # 想左右分开就用 SPACE_BETWEEN。
                     ft.Row(
                         [
-                            ui.text(session.info.name or "房间", 17, "gold",
-                                    ft.FontWeight.BOLD),
-                            ui.pill(f"房间码 {session.code or '——'}"),
+                            ui.text(session.info.name or t("room.room"), 17,
+                                    "gold", ft.FontWeight.BOLD),
+                            ui.pill(t("room.code",
+                                      code=session.code or "——")),
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -137,8 +153,7 @@ class _Lobby:
                     ft.Container(height=6),
                     self.head_info,
                     ft.Container(height=4),
-                    ui.hint("同一 WiFi / 局域网里的伙伴在「搜索房间」里"
-                            "能看到这个房间，报房间码给他才能进来。"),
+                    ui.hint(t("room.head_hint")),
                 ],
                 spacing=0,
             )
@@ -148,13 +163,11 @@ class _Lobby:
         return ui.panel(
             ft.Column(
                 [
-                    ui.text("席位", 13, "gold", ft.FontWeight.BOLD),
+                    ui.text(t("room.seats"), 13, "gold", ft.FontWeight.BOLD),
                     ft.Container(height=10),
                     self.seat_row,
                     ft.Container(height=8),
-                    ui.hint("点空位可以坐下 / 换座；🎤 是开着麦的，"
-                            "🔇 是关了麦的，♛ 是房主。"
-                            "超出本局人数的位子为观战席。"),
+                    ui.hint(t("room.seats_hint")),
                 ],
                 spacing=0,
             )
@@ -164,19 +177,20 @@ class _Lobby:
 
     def _game_selector_area(self, session: RoomSession) -> ft.Control:
         players = game_players(session.info.game_id)
-        note = (f"{players} 人上场，多出来的人观战"
+        note = (t("room.players_note_extra", n=players)
                 if session.info.seats > players
-                else f"{players} 人上场")
+                else t("room.players_note", n=players))
         if session.is_host:
             chips = [
-                ui.chip(it.title, active=(it.id == session.info.game_id),
+                ui.chip(it.label, active=(it.id == session.info.game_id),
                         on_click=(lambda _e, gid=it.id,
-                                  gt=it.title: self._set_room_game(gid, gt)))
+                                  gt=it.label: self._set_room_game(gid, gt)))
                 for it in registry.menu_items() if it.available
             ]
             inner = ft.Column(
                 [
-                    ui.text("选游戏（房主可切换）", 13, "gold", ft.FontWeight.BOLD),
+                    ui.text(t("room.select_game"), 13, "gold",
+                            ft.FontWeight.BOLD),
                     ft.Container(height=6),
                     ft.Row(chips, wrap=True, spacing=6,
                            vertical_alignment=ft.CrossAxisAlignment.CENTER),
@@ -188,7 +202,8 @@ class _Lobby:
         else:
             inner = ft.Column(
                 [
-                    ui.text("本局游戏", 13, "gold", ft.FontWeight.BOLD),
+                    ui.text(t("room.current_game"), 13, "gold",
+                            ft.FontWeight.BOLD),
                     ft.Container(height=6),
                     ui.text(session.info.game_title, 15, "", ft.FontWeight.BOLD),
                     ft.Container(height=6),
@@ -203,34 +218,35 @@ class _Lobby:
         if self.session is None or not self.session.is_host:
             return
         self.session.set_game(game_id, game_title)
-        self.system(f"房主把游戏换成了 {game_title}")
+        self.system(t("room.game_changed", game=game_title))
         # 重画选游戏区（让 chip 高亮跟上）与席位区（观战席数量变了）
         self._game_selector_area(self.session)
         self._render_seats()
-        self.head_info.value = (f"房主 {self.session.info.host} · "
-                                f"{self.session.info.game_title} · "
-                                f"{self.session.info.ip}:"
-                                f"{self.session.info.port}")
+        self.head_info.value = t(
+            "room.head_info", host=self.session.info.host,
+            game=self.session.info.game_title,
+            addr=f"{self.session.info.ip}:{self.session.info.port}")
         self.page.update()
 
     def _voice_area(self, session: RoomSession) -> ft.Control:
-        tip_text = ("进房间默认不录音 —— 点「开麦克风」才开始说话，对方的语音会"
-                    "自动放出来。" if AUDIO_OK
-                    else "这台机器没有语音库，装了 sounddevice + numpy 后才能说话。")
+        tip_text = (t("room.voice_tip") if AUDIO_OK
+                    else t("room.voice_unavailable"))
         self._voice_row = ft.Row(
             [
-                ui.button("开麦克风", "🎤", self._toggle_mic, height=40),
+                ui.button(t("room.mic_on"), "🎤", self._toggle_mic, height=40),
                 ft.Container(width=10),
-                ui.button("关扬声器", "🔊", self._toggle_speaker, height=40),
+                ui.button(t("room.speaker_off"), "🔊", self._toggle_speaker,
+                          height=40),
                 ft.Container(width=14),
-                ft.Column([ui.text("电平", 10, "dim"), self.level], spacing=2),
+                ft.Column([ui.text(t("room.level"), 10, "dim"), self.level],
+                          spacing=2),
             ],
             vertical_alignment=ft.CrossAxisAlignment.CENTER, wrap=True,
         )
         return ui.panel(
             ft.Column(
                 [
-                    ui.text("语音", 13, "gold", ft.FontWeight.BOLD),
+                    ui.text(t("room.voice"), 13, "gold", ft.FontWeight.BOLD),
                     ft.Container(height=10),
                     self._voice_row,
                     ft.Container(height=8),
@@ -244,7 +260,7 @@ class _Lobby:
         return ui.panel(
             ft.Column(
                 [
-                    ui.text("聊天", 13, "gold", ft.FontWeight.BOLD),
+                    ui.text(t("room.chat"), 13, "gold", ft.FontWeight.BOLD),
                     ft.Container(height=8),
                     ui.scroll_box(self.chat_col, height=180),
                     ft.Container(height=8),
@@ -254,7 +270,8 @@ class _Lobby:
                         [
                             ft.Container(
                                 content=ft.TextField(
-                                    ref=self.input_ref, hint_text="说点什么…",
+                                    ref=self.input_ref,
+                                    hint_text=t("room.chat_placeholder"),
                                     border=ft.InputBorder.OUTLINE, text_size=14,
                                     color=ui.colors().text,
                                     bgcolor=ui.colors().ink,
@@ -268,14 +285,16 @@ class _Lobby:
                                 padding=ft.Padding.symmetric(horizontal=8),
                             ),
                             ft.Container(width=8),
-                            ui.button("发送", "✉", self._send, height=44),
+                            ui.button(t("room.send"), "✉", self._send,
+                                      height=44),
                         ],
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
                     ft.Container(height=8),
                     ft.Row(
                         [
-                            ui.button("开始" if session.is_host else "等待开始",
+                            ui.button(t("room.start") if session.is_host
+                                      else t("room.wait_start"),
                                       "⚔", self._begin,
                                       primary=session.is_host,
                                       enabled=session.is_host, height=44),
@@ -295,11 +314,10 @@ class _Lobby:
             return
         self.mic_on = not self.mic_on
         ok = self.session.set_mic(self.mic_on)
-        self.tip.value = ("" if ok
-                          else "麦克风没能打开：看看系统有没有给麦克风权限，"
-                               "或者设备被别的软件占着？")
+        self.tip.value = ("" if ok else t("room.mic_error"))
         self.tip.color = ui.tone("danger")
-        self.system("麦克风已开启" if self.mic_on else "麦克风已关闭")
+        self.system(t("room.mic_enabled") if self.mic_on
+                    else t("room.mic_disabled"))
         self._render_voice_buttons()
         self.page.update()
 
@@ -308,7 +326,8 @@ class _Lobby:
             return
         self.speaker_on = not self.speaker_on
         self.session.set_speaker(self.speaker_on)
-        self.system("扬声器已开启" if self.speaker_on else "扬声器已静音")
+        self.system(t("room.speaker_enabled") if self.speaker_on
+                    else t("room.speaker_muted"))
         self._render_voice_buttons()
         self.page.update()
 
@@ -330,13 +349,10 @@ class _Lobby:
         session.begin_game()
         route = GAME_ROOM_ROUTE.get(session.info.game_id)
         if route:
-            # 象棋需要每次进对局都重建视图（重新判断本地 / 联网并接管网络回调）
-            if route == "/g/chess/play" and Router.current is not None:
-                Router.current.invalidate(route)
-            self.navigate(route)
+            _enter_game_route(self.navigate, route)
         else:
-            self.tip.value = f"「{session.info.game_title}」还没接好联机房间，" \
-                             f"先把人凑齐就是了。"
+            self.tip.value = t("room.game_not_ready",
+                               game=session.info.game_title)
             self.tip.color = ui.tone("danger")
             self.page.update()
 
@@ -348,7 +364,7 @@ class _Lobby:
 
     def _on_leave(self, _e=None) -> None:
         """离开房间：广播一声 bye，停掉语音与所有线程。"""
-        self.system("离开房间")
+        self.system(t("room.leave"))
         _sess.leave_current()
         self.session = None
         self._polling = False
@@ -370,12 +386,13 @@ class _Lobby:
             spectator = i >= players          # 超出游戏人数的席位是观战席
             member = by_seat.get(i)
             if member is None:
-                label = f"空位 {i + 1}" + (" · 观战" if spectator else "")
+                label = (t("room.empty_seat", n=i + 1)
+                         + (t("room.spectator") if spectator else ""))
                 cells.append(ui.slot(label, on_click=self._take_seat(i)))
                 continue
             peer = (member.ip, member.voice_port)
             talking = bool(member.voice_port) and session.voice.is_talking(peer)
-            suffix = " · 观战" if spectator else ""
+            suffix = t("room.spectator") if spectator else ""
             cells.append(ui.taken_slot(
                 member.nick + suffix, host=member.host, talking=talking,
                 muted=not member.mic_on))
@@ -383,7 +400,7 @@ class _Lobby:
         for member in members:
             if member.seat >= 0:
                 continue
-            cells.append(ui.taken_slot(member.nick + "（观战）",
+            cells.append(ui.taken_slot(member.nick + t("room.spectator_paren"),
                                        host=member.host, muted=True))
         self.seat_row.controls = cells
 
@@ -392,15 +409,17 @@ class _Lobby:
         if self.session is None or self._voice_row is None:
             return
         self._voice_row.controls = [
-            ui.button("关麦克风" if self.mic_on else "开麦克风",
+            ui.button(t("room.mic_off") if self.mic_on else t("room.mic_on"),
                       "🎤" if self.mic_on else "🔇",
                       self._toggle_mic, height=40),
             ft.Container(width=10),
-            ui.button("开扬声器" if not self.speaker_on else "关扬声器",
+            ui.button(t("room.speaker_on") if not self.speaker_on
+                      else t("room.speaker_off"),
                       "🔊" if self.speaker_on else "🔈",
                       self._toggle_speaker, height=40),
             ft.Container(width=14),
-            ft.Column([ui.text("电平", 10, "dim"), self.level], spacing=2),
+            ft.Column([ui.text(t("room.level"), 10, "dim"), self.level],
+                      spacing=2),
         ]
 
     def system(self, text: str) -> None:
@@ -439,16 +458,14 @@ class _Lobby:
                 elif kind == "system":
                     self.system(str(payload))
                 elif kind == "start":
-                    self.system("房主发起了游戏，出发！")
+                    self.system(t("room.start_broadcast"))
                     route = GAME_ROOM_ROUTE.get(str(payload.get("game", "")))
                     if route and not session.is_host:
-                        # 同上：象棋每次重建视图以接管网络回调
-                        if route == "/g/chess/play" and Router.current is not None:
-                            Router.current.invalidate(route)
-                        self.navigate(route)
+                        # 同上：每次重建视图以接管网络回调
+                        _enter_game_route(self.navigate, route)
                         return
                 elif kind == "kicked":
-                    self.system("房主把你移出了房间")
+                    self.system(t("room.kicked"))
                     self._polling = False
                     _sess.leave_current()
                     self.navigate("/multiplayer")

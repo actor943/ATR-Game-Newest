@@ -13,6 +13,7 @@ from typing import Callable, List, Optional
 import flet as ft
 
 from core import theme
+from core.i18n import t
 
 from .base import BasePack, ColorTokens, PackMeta
 
@@ -195,7 +196,8 @@ class MaterialPack(BasePack):
         if on_back is not None:
             left.append(ft.IconButton(icon=ft.Icons.ARROW_BACK,
                                       icon_color=self.colors.text,
-                                      on_click=on_back, tooltip="返回"))
+                                      on_click=on_back,
+                                      tooltip=t("common.back")))
         return ft.Container(
             height=56, bgcolor=self.colors.surface,
             border=ft.Border.only(bottom=ft.BorderSide(1, self.colors.border)),

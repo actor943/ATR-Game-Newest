@@ -11,6 +11,7 @@ import flet as ft
 
 from core import registry
 from core import ui_theme as ui
+from core.i18n import t
 from core.registry import NavigateFn
 
 
@@ -24,12 +25,13 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     cards: list[ft.Control] = []
     for item in items:
+        # .label / .desc 会按当前语言翻译（游戏插件登记了 title_key/desc_key）
         cards.append(
-            ui.card(item.title, item.description, item.icon,
+            ui.card(item.label, item.desc, item.icon,
                     go(item.home_path), available=item.available, width=300)
         )
     cards.append(
-        ui.card("更多游戏", "跳刀 / 斗地主 / 跑得快……敬请期待。",
+        ui.card(t("single.more"), t("single.more_desc"),
                 "🎴", available=False, width=300)
     )
 
@@ -41,9 +43,9 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     body = ft.Column(
         [
-            ui.text("单人游戏", 22, "", ft.FontWeight.BOLD),
+            ui.text(t("single.title"), 22, "", ft.FontWeight.BOLD),
             ft.Container(height=4),
-            ui.text("挑一款，自己和 AI（或本地工具）玩。", 13, "secondary"),
+            ui.text(t("single.subtitle"), 13, "secondary"),
             ft.Container(height=20),
             grid,
             ft.Container(expand=True),
@@ -52,4 +54,4 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         horizontal_alignment=ft.CrossAxisAlignment.START,
     )
 
-    return ui.page("单人游戏", body, on_back=lambda _e: navigate("/"))
+    return ui.page(t("single.title"), body, on_back=lambda _e: navigate("/"))

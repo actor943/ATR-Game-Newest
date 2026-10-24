@@ -28,6 +28,7 @@ import flet as ft
 
 from core import registry
 from core import ui_theme as ui
+from core.i18n import t
 from core.net.discovery import RoomInfo, RoomScanner
 from core.net.session import RoomSession, current as session_current, set_current
 from core.profile import Profile, normalize_code, random_code
@@ -67,7 +68,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     code_ref = ft.Ref[ft.TextField]()
     nick_ref = ft.Ref[ft.TextField]()
     tip = ui.hint("")
-    tab_title = ui.hint("建立房间", "primary")
+    tab_title = ui.hint(t("mp.tab_create"), "primary")
 
     # 游戏列表：只列已经能玩的游戏
     games = [it for it in registry.menu_items() if it.available]
@@ -87,13 +88,13 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     def render_create(_e=None) -> None:
         stop_scan()
         state["tab"] = "create"
-        tab_title.value = "建立房间"
+        tab_title.value = t("mp.tab_create")
         tab_title.color = ui.tone("primary")
         _fill_form_area()
 
     def render_search(_e=None) -> None:
         state["tab"] = "search"
-        tab_title.value = "搜索房间"
+        tab_title.value = t("mp.tab_search")
         tab_title.color = ui.tone("primary")
         _fill_form_area()
         _start_scan()
@@ -135,12 +136,12 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         code = normalize_code(
             code_ref.current.value if code_ref.current else "")
         if not name:
-            tip.value = "先给房间起个名字"
+            tip.value = t("mp.name_required")
             tip.color = ui.tone("danger")
             page.update()
             return
         if len(code) < 4:
-            tip.value = "房间码至少 4 位"
+            tip.value = t("mp.code_too_short")
             tip.color = ui.tone("danger")
             page.update()
             return
@@ -159,7 +160,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                                      profile.ensure_nick(), seats=seats)
         state["busy"] = False
         if session is None:
-            tip.value = "开房失败：本机 UDP 端口用不了？（网络权限？）"
+            tip.value = t("mp.create_failed")
             tip.color = ui.tone("danger")
             page.update()
             return
@@ -181,16 +182,17 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                 [
                     ft.Column(
                         [
-                            ui.text(info.name or "（无名房间）", 14, "",
+                            ui.text(info.name or t("mp.unnamed_room"), 14, "",
                                     ft.FontWeight.BOLD),
-                            ui.text(f"{info.game_title} · 房主 {info.host} · "
-                                     f"{info.ip}", 11, "dim"),
+                            ui.text(t("mp.room_meta", game=info.game_title,
+                                      host=info.host, ip=info.ip), 11, "dim"),
                         ],
                         spacing=2, expand=True,
                     ),
                     ui.pill(info.label, tone="danger" if full else "gold"),
                     ft.Container(width=8),
-                    ui.button("进入", "🚪", lambda _e, i=info: _ask_code(i),
+                    ui.button(t("mp.enter"), "🚪",
+                              lambda _e, i=info: _ask_code(i),
                               primary=not full, enabled=not full, height=36),
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -200,7 +202,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     def _ask_code(info: RoomInfo) -> None:
         """弹一个小框要房间码；输对了才发出加入请求。"""
         code_box = ft.TextField(
-            value="", hint_text="房间码（房主那儿问）",
+            value="", hint_text=t("mp.code_placeholder"),
             border=ft.InputBorder.OUTLINE, text_size=14,
             color=ui.colors().text, bgcolor=ui.colors().ink,
             capitalization=ft.TextCapitalization.CHARACTERS,
@@ -210,7 +212,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         def confirm(_e=None) -> None:
             code = normalize_code(code_box.value or "")
             if len(code) < 4:
-                err.value = "房间码至少 4 位"
+                err.value = t("mp.code_too_short")
                 err.color = ui.tone("danger")
                 page.update()
                 return
@@ -221,10 +223,11 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
             ft.AlertDialog(
                 modal=True,
                 bgcolor=ui.colors().surface,
-                title=ui.text(f"进入 {info.name}", 15, ""),
+                title=ui.text(t("mp.code_dialog_title", name=info.name), 15, ""),
                 content=ft.Column(
                     [
-                        ui.hint(f"房主：{info.host} · {info.game_title}"),
+                        ui.hint(t("mp.code_dialog_hint", host=info.host,
+                                  game=info.game_title)),
                         ft.Container(height=8),
                         ft.Container(content=code_box,
                                      border=ft.Border.all(
@@ -237,9 +240,11 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                     spacing=4, tight=True,
                 ),
                 actions=[
-                    ft.TextButton(content=ui.text("取消", 13, "dim"),
+                    ft.TextButton(content=ui.text(t("common.cancel"), 13,
+                                                  "dim"),
                                   on_click=lambda _e: page.pop_dialog()),
-                    ft.TextButton(content=ui.text("进入", 13, "primary",
+                    ft.TextButton(content=ui.text(t("mp.enter"), 13,
+                                                  "primary",
                                                   ft.FontWeight.BOLD),
                                   on_click=confirm),
                 ],
@@ -247,12 +252,12 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         )
 
     def _do_join(info: RoomInfo, code: str) -> None:
-        tip.value = f"正在加入「{info.name}」…"
+        tip.value = t("mp.joining", name=info.name)
         tip.color = ui.tone("primary")
         page.update()
         session = RoomSession.join(info, code, profile.ensure_nick())
         if session is None:
-            tip.value = "加入失败：本机 UDP 端口用不了？"
+            tip.value = t("mp.join_failed")
             tip.color = ui.tone("danger")
             page.update()
             return
@@ -270,13 +275,13 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                     return
                 if kind in ("join_failed", "kicked"):
                     session.close()
-                    tip.value = f"进不去：{payload}"
+                    tip.value = t("mp.join_reject", reason=payload)
                     tip.color = ui.tone("danger")
                     page.update()
                     return
             await asyncio.sleep(0.1)
         session.close()
-        tip.value = "房主没有回应（可能已经关了房间，或不在同一局域网）"
+        tip.value = t("mp.no_response")
         tip.color = ui.tone("danger")
         page.update()
 
@@ -287,7 +292,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         if scanner is None:
             scanner = RoomScanner()
             if not scanner.start():
-                tip.value = "扫描端口被占用了（已经有一个搜索在跑？）"
+                tip.value = t("mp.scan_busy")
                 tip.color = ui.tone("danger")
                 page.update()
                 return
@@ -306,25 +311,28 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     # ---------------- 画面拼装 ----------------
 
     def _create_body() -> List[ft.Control]:
-        game_options = [(g.id, g.title) for g in games] \
-            or [("", "（暂无可用游戏）")]
+        # 卡名走 .label：游戏插件登记了 title_key 就会跟着语言变
+        game_options = [(g.id, g.label) for g in games] \
+            or [("", t("mp.no_games"))]
         return [
             ui.panel(
                 ft.Column(
                     [
-                        ui.field("房间名", profile.last_room_name
-                                 or f"{nick}的房间", ref=name_ref),
+                        ui.field(t("mp.room_name"), profile.last_room_name
+                                 or t("mp.room_name_default", nick=nick),
+                                 ref=name_ref),
                         ft.Container(height=12),
                         ft.Row(
                             [
                                 ui.field(
-                                    "房间码",
+                                    t("mp.room_code"),
                                     profile.last_room_code or random_code(),
-                                    hint_="4~8 位，同伴进房间要用",
+                                    hint_=t("mp.room_code_hint"),
                                     max_length=8, ref=code_ref),
                                 ft.Container(width=10),
                                 ft.Container(
-                                    content=ui.button("随机", None, roll_code,
+                                    content=ui.button(t("mp.random"), None,
+                                                      roll_code,
                                                       height=36, width=80),
                                     padding=ft.Padding.only(top=18),
                                 ),
@@ -332,7 +340,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                             vertical_alignment=ft.CrossAxisAlignment.START,
                         ),
                         ft.Container(height=12),
-                        ui.text("游戏", 11, "dim", spacing=1.0),
+                        ui.text(t("mp.game"), 11, "dim", spacing=1.0),
                         ft.Container(height=6),
                         ft.Row(
                             [
@@ -345,13 +353,14 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
                         ft.Container(height=6),
-                        ui.hint("人数多于本局所需时，多出来的人自动转为观战。"),
+                        ui.hint(t("mp.spectator_note")),
                         ft.Container(height=14),
-                        ui.text("席位", 11, "dim", spacing=1.0),
+                        ui.text(t("mp.seats"), 11, "dim", spacing=1.0),
                         ft.Container(height=6),
                         ft.Row(
                             [
-                                ui.chip(f"{i} 人", active=(str(i) == seat_pick),
+                                ui.chip(t("mp.seats_n", n=i),
+                                        active=(str(i) == seat_pick),
                                         on_click=(
                                             lambda _e, v=str(i): _set_seats(v)))
                                 for i in (2, 3, 4, 5, 6, 8)
@@ -360,10 +369,10 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
                         ft.Container(height=12),
-                        ui.field("你的名字", nick, ref=nick_ref,
-                                 hint_="房间里别人看到的名字，随时可在「我的」里改"),
+                        ui.field(t("mp.your_name"), nick, ref=nick_ref,
+                                 hint_=t("mp.your_name_hint")),
                         ft.Container(height=14),
-                        ft.Row([ui.button("建立房间", "⚒", do_create,
+                        ft.Row([ui.button(t("mp.create_btn"), "⚒", do_create,
                                           height=48, width=220)],
                                alignment=ft.MainAxisAlignment.CENTER),
                     ],
@@ -372,8 +381,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                 padding=16,
             ),
             ft.Container(height=12),
-            ui.hint("房间建好后，同一 WiFi / 局域网里的伙伴在"
-                    "「搜索房间」里就能看到；把房间码口头报给他才能进。"),
+            ui.hint(t("mp.create_hint")),
         ]
 
     def _search_body() -> List[ft.Control]:
@@ -383,10 +391,9 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                 ui.panel(
                     ft.Column(
                         [
-                            ui.text("🧭 正在搜索局域网里的房间…", 14, ""),
+                            ui.text(t("mp.scanning"), 14, ""),
                             ft.Container(height=6),
-                            ui.hint("让开房间的伙伴先建好房间，两边的电脑"
-                                    "要在同一个 WiFi / 局域网下。"),
+                            ui.hint(t("mp.scan_hint")),
                         ],
                         spacing=0,
                     ),
@@ -416,7 +423,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         """已经开过房间的话，从这里直接进。"""
         session = session_current()
         if session is None:
-            tip.value = "还没建房间：先在上面填一下，点「建立房间」。"
+            tip.value = t("mp.no_room_yet")
             tip.color = ui.tone("danger")
             page.update()
             return
@@ -424,25 +431,27 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     tabs = ft.Row(
         [
-            ft.Container(content=ui.button("建立房间", "⚒", render_create,
-                                           height=40), expand=True),
+            ft.Container(content=ui.button(t("mp.tab_create"), "⚒",
+                                           render_create, height=40),
+                         expand=True),
             ft.Container(width=10),
-            ft.Container(content=ui.button("搜索房间", "🧭", render_search,
-                                           height=40), expand=True),
+            ft.Container(content=ui.button(t("mp.tab_search"), "🧭",
+                                           render_search, height=40),
+                         expand=True),
         ],
     )
 
     # 竖排放「进入房间」：房间已经开好的话，这一颗随时能进
     enter_row = ft.Container(
-        content=ui.button("进入房间", "🚪", on_enter_room, height=44),
+        content=ui.button(t("mp.enter_room"), "🚪", on_enter_room, height=44),
         padding=ft.Padding.only(top=6),
     )
 
     body = ft.Column(
         [
-            ui.title("多人游戏", 22),
+            ui.title(t("mp.title"), 22),
             ft.Container(height=6),
-            ui.hint(f"你的名字：{nick}"),
+            ui.hint(t("mp.your_nick", nick=nick)),
             ft.Container(height=14),
             tabs,
             ft.Container(height=12),
@@ -460,4 +469,4 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     )
 
     render_create()
-    return ui.page("多人游戏", body, on_back=on_back)
+    return ui.page(t("mp.title"), body, on_back=on_back)

@@ -26,8 +26,10 @@ import time
 from dataclasses import dataclass, field, asdict
 from typing import Any, Dict, List, Optional, Tuple
 
+from ..i18n import t
 from . import (
-    ACK, BYE, CHAT, HELLO, PING, REJECT, RELIABLE,     ROSTER, START, WELCOME,
+    ACK, BYE, CHAT, GAME, HELLO, PING, REJECT, RELIABLE,     ROSTER, START,
+    WELCOME,
     check_code, code_hash, decode, encode, make_salt, new_mid, now, same_code,
     short_id,
 )
@@ -40,6 +42,7 @@ ROSTER_INTERVAL = 2.0      # 房主周期性广播席位表（自愈丢包）
 MAX_RETRY = 6              # 可靠消息最多重发几次
 RETRY_INTERVAL = 0.5
 JOIN_TIMEOUT = 4.0         # 等房主回话的最长时间
+GAME_BACKLOG = 32          #  handler 未挂上时最多暂存几条玩法消息
 
 
 @dataclass
@@ -109,6 +112,9 @@ class RoomSession:
         self._last_ping = 0.0
         self._lock = threading.RLock()
         self._game_handler = None     # 当前在房间内运行的游戏（如象棋）注册的网络回调
+        # 玩法消息到达时还没有回调（视图还在路上）→ 先暂存，挂上回调立刻补发，
+        # 否则「开始游戏」瞬间的头几条消息（req_state / 首发牌）会被悄悄吞掉
+        self._game_backlog: List[Dict[str, Any]] = []
 
         if self.is_host:
             self.members[me.mid] = me
@@ -167,7 +173,7 @@ class RoomSession:
         session = cls(room, me, sock, host=False, code=code)
         # 本地预校验：广播里带了盐和散列，输错的人立刻就能知道，不用干等超时
         if not check_code(code, room.salt, room.code_hash):
-            session.join_error = "房间码不对"
+            session.join_error = t("net.wrong_code")
             session._emit(("join_failed", session.join_error))
             session.close()
             return session
@@ -329,13 +335,32 @@ class RoomSession:
         ``fn(msg)`` 收到的 ``msg`` 是整包（含 ``data`` 字段）。离开游戏时传
         ``None`` 摘掉即可。走的是直接回调，不经事件队列，因此即使房间界面的
         轮询还在跑也不会把玩法消息抢走。
+
+        挂上回调时会先把暂存的玩法消息补发一遍（见 ``_game_backlog``）——
+        「开始游戏」后视图重建有先后，先到消息的那一方不会丢。
         """
-        self._game_handler = fn
+        with self._lock:
+            self._game_handler = fn
+            backlog, self._game_backlog = self._game_backlog, []
+        if fn is None:
+            return
+        for msg in backlog:
+            try:
+                fn(msg)
+            except Exception:                     # noqa: BLE001
+                pass
 
     def send_game(self, data: Dict[str, Any]) -> None:
         """把一帧玩法数据可靠地发给房间里其他所有人（不含自己）。"""
         self._reliable({"t": GAME, "game": self.info.game_id, "data": data},
                        self._others())
+
+    def send_game_to_host(self, data: Dict[str, Any]) -> None:
+        """客人用：把一帧玩法数据可靠地**单播**给房主（动作请求走房主中转）。"""
+        if self.is_host or not self.info.port:
+            return
+        self._reliable({"t": GAME, "game": self.info.game_id, "data": data},
+                       [(self.info.ip, self.info.port)])
 
     # ================================================================
     # 内部：事件与通知
@@ -467,7 +492,7 @@ class RoomSession:
     def _on_hello(self, msg: Dict[str, Any], addr: Tuple[str, int]) -> None:
         if not self.is_host:
             return
-        nick = str(msg.get("nick", "无名旅人"))[:16]
+        nick = str(msg.get("nick", t("net.anon")))[:16]
         proof = msg.get("code_check") or {}
         ip = addr[0]
         # 1) 房间码对不对：明文兜底，散列兜actoring（两端版本不一致时也能进）
@@ -475,8 +500,9 @@ class RoomSession:
                    or check_code(str(msg.get("code") or self.code),
                                  self.info.salt, str(proof.get("hash", ""))))
         if not code_ok:
-            self._send({"t": REJECT, "reason": "房间码不对", "mid": "0"}, addr)
-            self._emit(("system", f"有人（{ip}）房间码输错了，已拒绝"))
+            self._send({"t": REJECT, "reason": t("net.wrong_code"),
+                        "mid": "0"}, addr)
+            self._emit(("system", t("net.wrong_code_sys", ip=ip)))
             return
         mid = str(msg.get("mid", ""))
         if not mid:
@@ -485,8 +511,10 @@ class RoomSession:
         member = self.members.get(mid)
         if member is None:
             if self.started or len(self.members) >= self.info.seats:
-                self._send({"t": REJECT, "reason": ("已经开始" if self.started
-                                                     else "房间满员"),
+                self._send({"t": REJECT,
+                            "reason": (t("net.already_started")
+                                       if self.started
+                                       else t("net.room_full")),
                             "mid": mid}, addr)
                 return
             member = Member(mid=mid, nick=nick, ip=ip, ctrl_port=addr[1],
@@ -505,7 +533,7 @@ class RoomSession:
                         "game_id": self.info.game_id,
                         "game_title": self.info.game_title},
                        [(ip, addr[1])])
-        self._emit(("system", f"{nick} 加入了房间"))
+        self._emit(("system", t("net.joined", nick=nick)))
         self._push_roster()
         self._refresh_voice_peers()
 
@@ -611,7 +639,7 @@ class RoomSession:
             member = self.members.pop(mid, None)
         if member is None:
             return
-        self._emit(("system", f"{member.nick or nick} 离开了房间"))
+        self._emit(("system", t("net.left", nick=member.nick or nick)))
         if self.is_host:
             self._push_roster()
         self._emit(("roster", self.roster()))
@@ -638,6 +666,10 @@ class RoomSession:
         """把玩法消息直接交给当前在房间里跑的游戏处理。"""
         fn = self._game_handler
         if fn is None:
+            # 视图还没建好（开始游戏瞬间常有）→ 暂存，等 set_game_handler 补发
+            with self._lock:
+                if len(self._game_backlog) < GAME_BACKLOG:
+                    self._game_backlog.append(msg)
             return
         try:
             fn(msg)
@@ -676,7 +708,8 @@ class RoomSession:
             for mid in drop:
                 member = self.members.pop(mid, None)
                 if member is not None:
-                    self._emit(("system", f"{member.nick} 掉线了"))
+                    self._emit(("system", t("net.dropped",
+                                            nick=member.nick)))
             if drop:
                 self._push_roster()
                 self._refresh_voice_peers()
@@ -692,7 +725,7 @@ class RoomSession:
                 if item["tries"] >= MAX_RETRY:
                     expired.append(seq)
                     if item.get("hello"):
-                        self.join_error = "房主没有回应（网络不通？）"
+                        self.join_error = t("net.no_response")
                         self._emit(("join_failed", self.join_error))
                     continue
                 item["tries"] += 1

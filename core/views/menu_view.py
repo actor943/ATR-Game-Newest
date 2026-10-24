@@ -17,13 +17,14 @@ from __future__ import annotations
 import flet as ft
 
 from core import ui_theme as ui
+from core.i18n import t
 from core.profile import Profile
 from core.registry import NavigateFn
 
 
 def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     profile = Profile.load()
-    nick = profile.nick or "还没起名"
+    nick = profile.nick or t("menu.no_nick")
 
     def go(path: str):
         def _handler(_e):
@@ -39,7 +40,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         [
             ft.Container(expand=True),
             ft.Container(
-                content=ui.text("设置", 12, "secondary"),
+                content=ui.text(t("menu.settings"), 12, "secondary"),
                 padding=ft.Padding.symmetric(horizontal=8, vertical=4),
                 border_radius=4, ink=True, on_click=go("/settings"),
             ),
@@ -54,7 +55,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                 ft.Container(width=8),
                 ft.Column(
                     [
-                        ui.text("我的", 13, "", ft.FontWeight.BOLD),
+                        ui.text(t("menu.me"), 13, "", ft.FontWeight.BOLD),
                         ui.text(nick, 11, "dim"),
                     ],
                     spacing=0,
@@ -73,14 +74,14 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         [
             header,
             ft.Container(height=8),
-            ui.text("ATR Game", 26, "", ft.FontWeight.BOLD),
-            ui.text("想去哪儿？", 13, "secondary"),
+            ui.text(t("route.home"), 26, "", ft.FontWeight.BOLD),
+            ui.text(t("menu.where"), 13, "secondary"),
             ft.Container(height=26),
             ft.Row(
                 [
-                    big_door("单人游戏", "自己和 AI 玩，或者用单机小工具",
+                    big_door(t("menu.single"), t("menu.single_desc"),
                              "🎮", "/single", "primary"),
-                    big_door("多人游戏", "同一 WiFi 下开房间一起玩，带语音",
+                    big_door(t("menu.multiplayer"), t("menu.multiplayer_desc"),
                              "⚔️", "/multiplayer", "accent"),
                 ],
                 wrap=True, spacing=14, run_spacing=14,
@@ -94,7 +95,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                 vertical_alignment=ft.CrossAxisAlignment.END,
             ),
             ft.Container(height=10),
-            ft.Text("v0.4.7 · 支持局域网联机", size=10,
+            ft.Text(t("menu.footer"), size=10,
                     color=ui.colors().text_muted,
                     text_align=ft.TextAlign.CENTER),
         ],
@@ -104,7 +105,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     return ft.Column(
         [
-            ui.bar("ATR Game"),
+            ui.bar(t("route.home")),
             ft.Container(
                 padding=ft.Padding.all(16),
                 content=body,

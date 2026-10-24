@@ -40,6 +40,19 @@ _NAMES = (
     "海盗", "骑士", "炼金术士", "哨兵", "流浪汉", "幸存者",
 )
 
+# 英文池：切到 English 时随机名也跟着换一套（不然房间里念不出中文名）
+_TITLES_EN = (
+    "Silent", "Wandering", "Lonely", "Rusty", "Ashen", "Grim", "Hollow",
+    "Iron", "Frost", "Ember", "Dusty", "Broken", "Quiet", "Wild",
+    "Bitter", "Restless", "Pale", "Old",
+)
+_NAMES_EN = (
+    "Scavenger", "Watchman", "Wanderer", "Blacksmith", "Hunter",
+    "Firethief", "Peddler", "Mercenary", "Gatekeeper", "Gravedigger",
+    "Cartographer", "Beastmaster", "Bard", "Hermit", "Pirate", "Knight",
+    "Alchemist", "Sentry", "Vagabond", "Survivor",
+)
+
 # 房间码用字：去掉 0/O/1/I 等容易念错也容易看错的字符，
 # 房间码是要**口头报给同局域网同伴**的（语音/口头），必须好念。
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -47,7 +60,15 @@ CODE_LEN = 6
 
 
 def random_nick() -> str:
-    """随机生成一个昵称，例如「沉默的拾荒者」。"""
+    """随机生成一个昵称，例如「沉默的拾荒者」/ "Silent Scavenger"。
+
+    按当前界面语言挑词库：中文库配石砖风的房间，英文库配英文界面 ——
+    房间里要靠嘴念名字，念不出来的名字没有意义。
+    """
+    from .i18n import current as current_lang
+
+    if current_lang().startswith("en"):
+        return f"{random.choice(_TITLES_EN)} {random.choice(_NAMES_EN)}"
     return f"{random.choice(_TITLES)}{random.choice(_NAMES)}"
 
 

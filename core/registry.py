@@ -27,12 +27,25 @@ ViewBuilder = Callable[[ft.Page, NavigateFn], ft.Control]
 
 @dataclass(frozen=True)
 class RouteSpec:
-    """一条路由：路径 + 标题 + 构建器。"""
+    """一条路由：路径 + 标题 + 构建器。
+
+    ``title`` 是写死的兜底文案；想让标题跟着语言走就再给 ``title_key``
+    （见 :mod:`core.i18n`），取标题一律用 :attr:`label`。
+    """
 
     path: str           # 例如 "/g/guandan/board"
     title: str          # 显示在顶栏与菜单
     builder: ViewBuilder
     group: str = ""     # 用于面包屑/分组（可选）
+    title_key: str = ""  # i18n 键；给了就用当前语言翻译 title
+
+    @property
+    def label(self) -> str:
+        """当前语言下的标题（没登记 title_key 就用写死的 title）。"""
+        if not self.title_key:
+            return self.title
+        from core.i18n import t
+        return t(self.title_key, default=self.title)
 
 
 @dataclass(frozen=True)
@@ -45,6 +58,24 @@ class MenuItem:
     description: str
     available: bool = True
     home_path: str = ""  # 点击后跳到的子菜单路径
+    title_key: str = ""  # i18n 键（标题）
+    desc_key: str = ""   # i18n 键（说明）
+
+    @property
+    def label(self) -> str:
+        """当前语言下的卡名。"""
+        if not self.title_key:
+            return self.title
+        from core.i18n import t
+        return t(self.title_key, default=self.title)
+
+    @property
+    def desc(self) -> str:
+        """当前语言下的卡说明。"""
+        if not self.desc_key:
+            return self.description
+        from core.i18n import t
+        return t(self.desc_key, default=self.description)
 
 
 @dataclass(frozen=True)

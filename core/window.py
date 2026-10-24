@@ -19,10 +19,16 @@ MAXIMIZED = "maximized"
 WINDOWED = "window"
 
 MODES = (FULLSCREEN, MAXIMIZED, WINDOWED)
+# 字面文案（中文）保留为兜底；界面上请一律用 :func:`mode_label`，它按当前语言取
 MODE_LABELS = {
     FULLSCREEN: "全屏（默认）",
     MAXIMIZED: "最大化",
     WINDOWED: "窗口",
+}
+MODE_LABEL_KEYS = {
+    FULLSCREEN: "window.fullscreen",
+    MAXIMIZED: "window.maximized",
+    WINDOWED: "window.windowed",
 }
 
 # 窗口模式下的默认尺寸（仅 WINDOWED 使用）
@@ -35,6 +41,13 @@ MIN_HEIGHT = 700
 def normalize(mode: Optional[str]) -> str:
     """容错：未知模式一律回落到全屏。"""
     return mode if mode in MODES else FULLSCREEN
+
+
+def mode_label(mode: Optional[str]) -> str:
+    """该窗口模式在当前语言下的名字（设置页下拉与状态文字都用它）。"""
+    from .i18n import t
+    key = MODE_LABEL_KEYS[normalize(mode)]
+    return t(key, default=MODE_LABELS[normalize(mode)])
 
 
 def apply_window_mode(page: ft.Page, settings: Settings) -> None:

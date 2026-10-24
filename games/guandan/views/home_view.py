@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import flet as ft
 
+from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
 from core.ui_common import app_bar, menu_card
@@ -13,6 +14,14 @@ from games.guandan.views.history_view import open_history
 
 def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
     """掼蛋子菜单：开始游戏 / 记牌 / 模拟 / 历史记录 / 牌型速查。"""
+
+    def go_play(_e):
+        # 每次进对局都重建视图（丢掉路由缓存）：否则上一局（尤其是上一场
+        # 联机对局）的牌桌实例会被复用，又变成「各玩各的」（0.4.8-fix）
+        from core.router import Router
+        if Router.current is not None:
+            Router.current.invalidate("/g/guandan/play")
+        navigate("/g/guandan/play")
 
     def go(path: str):
         def _handler(_e):
@@ -24,21 +33,22 @@ def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     body = ft.Column(
         [
-            ft.Text("选择一个模式", size=14, color=T.TEXT_SECONDARY),
+            ft.Text(t("guandan.choose_mode"), size=14,
+                    color=T.TEXT_SECONDARY),
             ft.Container(height=8),
             # 第一行：开始游戏 + 快速记牌
             ft.Row(
                 [
                     menu_card(
-                        title="开始游戏",
-                        description="用上次的房间与座位配置直接开局：单人 / 三人机。",
+                        title=t("guandan.play"),
+                        description=t("guandan.play_desc"),
                         icon="▶️",
                         available=True,
-                        on_click=go("/g/guandan/play"),
-                    ),
+                        on_click=go_play,
+                        ),
                     menu_card(
-                        title="快速记牌",
-                        description="记录出牌，按四家视角计算炸弹概率。",
+                        title=t("guandan.board"),
+                        description=t("guandan.board_desc"),
                         icon="📝",
                         available=True,
                         on_click=go("/g/guandan/board"),
@@ -53,15 +63,15 @@ def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
             ft.Row(
                 [
                     menu_card(
-                        title="牌型速查",
-                        description="常见牌型与大小关系速记。",
+                        title=t("guandan.types"),
+                        description=t("guandan.types_desc"),
                         icon="📖",
                         available=True,
                         on_click=go("/g/guandan/types"),
                     ),
                     menu_card(
-                        title="全模拟",
-                        description="AI 自动互玩整场，图形化观战（真牌图）。",
+                        title=t("guandan.simulator"),
+                        description=t("guandan.simulator_desc"),
                         icon="🎬",
                         available=True,
                         on_click=go("/g/guandan/simulator"),
@@ -76,15 +86,15 @@ def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
             ft.Row(
                 [
                     menu_card(
-                        title="历史记录",
-                        description="查看往期出牌记录（每整场结束自动保存）。",
+                        title=t("guandan.history"),
+                        description=t("guandan.history_desc"),
                         icon="🗂️",
                         available=True,
                         on_click=go_history,
                     ),
                     menu_card(
-                        title="AI 建议",
-                        description="输入自己手牌，让算法给出推荐出牌。",
+                        title=t("guandan.advisor"),
+                        description=t("guandan.advisor_desc"),
                         icon="🤖",
                         available=False,
                     ),
@@ -99,7 +109,7 @@ def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     return ft.Column(
         [
-            app_bar("掼蛋", on_back=go("/")),
+            app_bar(t("game.guandan.title"), on_back=go("/")),
             ft.Container(
                 padding=ft.Padding.all(T.PADDING),
                 content=body,

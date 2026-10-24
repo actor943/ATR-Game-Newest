@@ -17,6 +17,8 @@ from typing import Callable, List, Optional
 
 import flet as ft
 
+from core.i18n import t
+
 from .base import BasePack, ColorTokens, PackMeta
 
 INK = "#0B0906"             # 最底：地牢黑
@@ -257,7 +259,7 @@ class RusticPack(BasePack):
         left: List[ft.Control] = []
         if on_back is not None:
             left.append(self.icon_button(ft.Icons.ARROW_BACK, on_back,
-                                         tooltip="返回"))
+                                         tooltip=t("common.back")))
         return ft.Container(
             height=56, bgcolor=STONE_PANEL,
             border=ft.Border.only(bottom=ft.BorderSide(2, GOLD_DARK)),

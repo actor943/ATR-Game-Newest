@@ -15,6 +15,7 @@ from typing import Callable, Dict, List, Optional
 import flet as ft
 
 from core import history
+from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
 from core.ui_common import app_bar
@@ -28,7 +29,7 @@ def _read_file(path: Path) -> List[str]:
     try:
         return path.read_text(encoding="utf-8").splitlines()
     except OSError as exc:
-        return [f"（读取失败：{exc}）"]
+        return [t("history.read_failed", exc=exc)]
 
 
 def _split_meta(lines: List[str]) -> tuple[Dict[str, str], List[str]]:
@@ -117,11 +118,11 @@ class HistoryPage:
         footer = ft.Row(
             [
                 ft.Button(
-                    content=ft.Text("刷新", size=12),
+                    content=ft.Text(t("history.refresh"), size=12),
                     on_click=lambda _e: self._reload(),
                 ),
                 ft.Button(
-                    content=ft.Text("打开数据目录", size=12),
+                    content=ft.Text(t("history.open_dir"), size=12),
                     on_click=self._on_open_dir,
                 ),
             ],
@@ -143,7 +144,7 @@ class HistoryPage:
                     content=self.list_col,
                 ),
                 ft.Container(height=8),
-                ft.Text("── 记录全文 ──", size=11, color=T.TEXT_MUTED),
+                ft.Text(t("history.section"), size=11, color=T.TEXT_MUTED),
                 ft.Container(height=4),
                 detail_box,
                 ft.Container(height=8),
@@ -164,7 +165,7 @@ class HistoryPage:
                                 [
                                     ft.Icon(ft.Icons.REFRESH, size=16,
                                             color=T.TEXT_PRIMARY),
-                                    ft.Text("刷新", size=12,
+                                    ft.Text(t("history.refresh"), size=12,
                                             color=T.TEXT_PRIMARY),
                                 ],
                                 spacing=4, tight=True,
@@ -188,30 +189,26 @@ class HistoryPage:
         """重新扫描日志目录并重建列表（不清空已选中的正文）。"""
         self.files = history.recent_logs(self.game_id, limit=self.max_files)
         try:
-            self.path_text.value = (
-                f"日志目录：{history.logs_dir(self.game_id)}")
+            self.path_text.value = t("history.log_dir",
+                                     path=history.logs_dir(self.game_id))
         except OSError:
-            self.path_text.value = "日志目录：不可用"
+            self.path_text.value = t("history.log_dir_na")
         self.count_text.value = (
-            f"共 {len(self.files)} 场记录"
-            if self.files else "还没有记录"
+            t("history.count", n=len(self.files))
+            if self.files else t("history.none")
         )
         self._rebuild_list()
         if self.files and self.index < 0:
             self._select(0)                  # 默认展开最近一场
         elif not self.files:
-            self.detail_text.value = (
-                "还没有记录。\n\n"
-                "打完一局后，对局记录会自动保存到这里；"
-                "中途退出也会留一份。"
-            )
+            self.detail_text.value = t("history.empty_body")
         self._update()
 
     def _rebuild_list(self):
         self.list_col.controls = [
             self._list_item(i, p) for i, p in enumerate(self.files)
         ] or [
-            ft.Text("（空）", size=12, color=T.TEXT_MUTED)
+            ft.Text(t("history.empty_item"), size=12, color=T.TEXT_MUTED)
         ]
 
     def _list_item(self, i: int, path: Path) -> ft.Control:
@@ -244,7 +241,8 @@ class HistoryPage:
             return
         self.index = i
         lines = _read_file(self.files[i])
-        self.detail_text.value = "\n".join(lines) if lines else "（空文件）"
+        self.detail_text.value = ("\n".join(lines) if lines
+                                  else t("history.empty_file"))
         self._rebuild_list()                 # 刷新选中高亮
         self._update()
 
@@ -253,8 +251,8 @@ class HistoryPage:
         try:
             self.page.launch_url(history.open_data_dir().as_uri())
         except Exception as exc:                  # noqa: BLE001
-            self.detail_text.value = (
-                f"打不开目录，请手动前往：\n{history.data_dir()}\n（{exc}）")
+            self.detail_text.value = t("history.open_failed",
+                                       path=history.data_dir(), exc=exc)
             self._update()
 
     def _update(self):

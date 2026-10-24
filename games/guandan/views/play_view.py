@@ -14,7 +14,15 @@
 * 近期事件沿用全模拟的终端写法（单个 ``ft.Text`` + spans，固定高度可滚动），
   Mac 上可整段复制。
 
-暂未实现：进贡/还贡/抗贡、炸弹特效、悔牌。
+联机对局（0.4.8-fix：开始游戏后所有人必须是**同一副牌**）
+--------------------------------------------------------
+从房间「开始」进来的对局，**房主是唯一权威**：只有房主洗牌发牌，之后每有一个
+动作（出牌 / 过牌 / 进贡 / 发下一手）房主就把整场局面连同新的事件日志重推一次
+快照；所有人按 ``seq`` 只采用更新的快照，乱序 / 重传的旧包直接丢弃。客人不本地
+洗牌、不本地跑 AI、不本地写日志 —— 全部等房主快照，从根上杜绝「各玩各的」。
+房间 0~3 号座对应牌桌甲~丁，空位由电脑补；4 号位起的人只围观（看不到任何手牌）。
+
+暂未实现：炸弹特效、悔牌。
 """
 
 from __future__ import annotations
@@ -22,7 +30,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from dataclasses import replace
-from typing import Deque, List, Optional, Set
+from typing import Deque, Dict, List, Optional, Set, Tuple
 
 import flet as ft
 
@@ -33,6 +41,7 @@ from core.ui_common import app_bar, fit_card_row, page_width
 from core.profile import ensure_nick
 from core.net import session as _sess
 from games.guandan import config as cfgmod
+from games.guandan.config import SEAT_AI, SEAT_HUMAN
 from games.guandan.views.history_view import open_history
 from games.guandan.ai import choose
 from games.guandan.assets import card_image_src
@@ -47,11 +56,18 @@ from games.guandan.cards import (
     wild_owner_label,
 )
 from games.guandan.engine import (
+    NUM_PLAYERS,
     Hand,
     IllegalMove,
     MatchState,
     TributePlan,
+    card_to_json,
+    cards_from_json,
+    cards_to_json,
+    load_match,
     new_match,
+    result_from_json,
+    serialize_match,
     settle,
 )
 from games.guandan.rules import ComboType, beats, parse
@@ -98,6 +114,20 @@ MAX_EVENTS = 5000             # 出牌记录全量保留（TextSpan 很轻，见
 EVENTS_HEIGHT = 180           # 事件窗口高度；内部可滚动看全部记录
 HAND_BOX_HEIGHT = 150         # 手牌/进贡面板高度（进贡面板要放提示+牌+按钮）
 
+# 事件日志的着色随联机快照一起广播（颜色名 <-> 色值），
+# 保证客人看到的「近期事件」与房主逐字逐色一致。
+_LOG_COLORS = {
+    "fg": "#E5E7EB",
+    "muted": MUTED,
+    "win": WIN_COLOR,
+    "head": HEAD_COLOR,
+    "gold": LEVEL_GOLD,
+    "bomb": BOMB_COLOR,
+    "team0": TEAM_COLOR[0],
+    "team1": TEAM_COLOR[1],
+}
+_LOG_COLOR_KEYS = {v: k for k, v in _LOG_COLORS.items()}
+
 # ---- 窄屏（手机）适配 ----
 # 手牌原来只有一行叠放：27 张 × 净宽 26 ≈ 700dp，手机 360dp 放不下，
 # 只能横向拖着看，永远看不全。现在按可用宽度自动换行成多行，
@@ -111,6 +141,12 @@ def _is_bomb(combo) -> bool:
     return combo is not None and combo.type in (
         ComboType.BOMB, ComboType.FLUSH_STRAIGHT, ComboType.JOKER_BOMB,
     )
+
+
+def _is_seat(value) -> bool:
+    """网络上传来的座位号是否合法（bool 是 int 的子类，要排除）。"""
+    return isinstance(value, int) and not isinstance(value, bool) \
+        and 0 <= value < NUM_PLAYERS
 
 
 def _plan_summary(plan: TributePlan) -> str:
@@ -198,8 +234,24 @@ class _Play:
         self.page = page
         self.navigate = navigate
         self.cfg: cfgmod.MatchConfig = cfgmod.active()
+
+        # ---- 联机房间开起来的对局 ----
+        # 权威在房主：只有房主洗牌发牌，之后每有个动作房主重推一次整局快照，
+        # 所有人按 seq 采用最新快照 —— 开始游戏后大家必然是**同一副牌**
+        # （0.4.8-fix：此前各客户端各自 new_match() 随机发牌，各玩各的）。
+        self.net = _sess.current()
+        self.is_host = bool(self.net and self.net.is_host)
+        self.my_seat = 0                   # 本机玩家坐在哪（甲=0 … 丁=3）
+        self.spectator = False             # 房间 4 号位起 / 没入座 = 旁观
+        self.remote_nicks: Dict[int, str] = {}   # 牌桌座位 -> 远端真人昵称
+        self._seq = 0                      # 房主：已推快照的序号
+        self._last_seq = -1                # 已应用的最新快照序号（防乱序 / 重传）
+        self._synced = self.net is None or self.is_host
+        self._result_hand_no = -1          # 结算面板对应的是第几手
+        if self.net is not None:
+            self._setup_net_seats()
         # 联机房间开起来的对局：本机玩家用昵称，而不是「你」
-        if _sess.current() is not None:
+        if self.net is not None:
             self.cfg = replace(self.cfg, local_nick=ensure_nick())
 
         self.match: MatchState = new_match()
@@ -212,6 +264,11 @@ class _Play:
 
         self._events: Deque[ft.TextSpan] = deque(maxlen=MAX_EVENTS)
         self._log_lines: Deque[str] = deque(maxlen=MAX_EVENTS)  # 纯文本，供落盘
+        # 每条日志的 (颜色, 加粗) —— 联机快照要把着色一起广播，客人才不会
+        # 看到一串白字（0.4.8-fix：事件记录也是「要同步的内容」）
+        self._log_meta: Deque[Tuple[str, bool]] = deque(maxlen=MAX_EVENTS)
+        self._log_sent = 0                  # 房主：已随快照发出去的日志条数
+        self._log_have = 0                  # 客人：已收到的日志条数（对齐用）
         self._log_saved = False        # 这一场是否已经落盘（防止重复写文件）
         self._ai_task = None
 
@@ -219,6 +276,7 @@ class _Play:
         self.score_text = ft.Text("", size=13, weight=ft.FontWeight.BOLD,
                                   color=T.TEXT_PRIMARY)
         self.level_note = ft.Text("", size=11, color=MUTED)
+        self.net_text = ft.Text("", size=11, color=MUTED)
         self.turn_text = ft.Text("", size=12)
         self.seat_row = ft.Row(spacing=8, wrap=True)
         self.target_box = ft.Container()
@@ -282,7 +340,7 @@ class _Play:
             content=ft.Row(
                 [
                     ft.Column(
-                        [self.score_text, self.level_note],
+                        [self.score_text, self.level_note, self.net_text],
                         spacing=2, expand=True,
                     ),
                     self.turn_text,
@@ -366,9 +424,22 @@ class _Play:
             ],
             expand=True,
         )
-        self._log(f"对局开始：{self.cfg.summary()}", HEAD_COLOR, bold=True)
+        self._log(f"对局开始：{self._seat_summary()}", HEAD_COLOR, bold=True)
+        if self.net is not None:
+            # 联机：接管会话的玩法消息；房主当即推牌，客人向房主要牌
+            global _CURRENT_PLAY
+            _CURRENT_PLAY = self
+            self.net.set_game_handler(self._on_net)
+            if self.is_host:
+                self._push_state()
+                self._start_ai()
+            else:
+                self.net.send_game_to_host({"k": "req_state"})
+                self.page.run_task(self._sync_wait())
+            self.page.run_task(self._net_poll)
         self._refresh()
-        self._start_ai()
+        if self.net is None:
+            self._start_ai()
         return view
 
     # ============================================================
@@ -376,12 +447,34 @@ class _Play:
     # ============================================================
 
     def _refresh(self):
+        if not self._synced:
+            self._render_waiting()
+            return
         self._render_top()
         self._render_seats()
         self._render_target()
         self._render_my_hand()
         self._render_result()
         self._render_buttons()
+        self.page.update()
+
+    def _render_waiting(self):
+        """客人还没拿到房主的快照：只显示「等待发牌」，不渲染本地那副随机牌。"""
+        self.turn_text.value = "等待房主发牌…"
+        self.turn_text.color = MUTED
+        self.net_text.value = "正在与房主同步局面…"
+        self.net_text.color = MUTED
+        self.seat_row.controls = [
+            ft.Text("等待房主发牌…", size=12, color=MUTED)]
+        self.target_box.content = ft.Container()
+        self.my_hand_col.controls = [
+            ft.Text("正在与房主同步局面…", size=13, color=MUTED)]
+        if self.hand_box is not None:
+            self.hand_box.height = HAND_BOX_HEIGHT
+        self.result_box.visible = False
+        self.play_btn.disabled = True
+        self.pass_btn.disabled = True
+        self.clear_btn.disabled = True
         self.page.update()
 
     def _render_top(self):
@@ -397,6 +490,7 @@ class _Play:
             f"    ·    逢人配：红桃级牌可当任意牌"
         )
         self.level_note.color = MUTED
+        self._render_net_text()
 
         if m.winner is not None:
             self.turn_text.value = f"整场结束 · 队{m.winner} 获胜"
@@ -407,9 +501,21 @@ class _Play:
             self.turn_text.color = WIN_COLOR
             return
         turn = self.hand.turn
-        self.turn_text.value = f"当前：{NAMES[turn]}（{self.cfg.controller(turn)}）"
-        self.turn_text.color = (MUTED if self.cfg.is_auto(turn)
+        self.turn_text.value = f"当前：{NAMES[turn]}（{self._controller(turn)}）"
+        self.turn_text.color = (MUTED if self._is_auto(turn)
                                 else TEAM_COLOR[self.cfg.team_of(turn)])
+
+    def _render_net_text(self):
+        """顶栏那行联机状态（本地单人模式留空）。"""
+        if self.net is None:
+            self.net_text.value = ""
+            return
+        if self.spectator:
+            self.net_text.value = "联机观战中 · 只读牌桌"
+        else:
+            self.net_text.value = (f"联机对局 · 你是{NAMES[self.my_seat]}"
+                                   f"（{self.cfg.local_nick or '你'}）")
+        self.net_text.color = MUTED
 
     def _render_seats(self):
         chips: List[ft.Control] = []
@@ -436,7 +542,7 @@ class _Play:
                             ft.Container(width=8),
                             ft.Column(
                                 [
-                                    ft.Text(self.cfg.controller(p), size=11,
+                                    ft.Text(self._controller(p), size=11,
                                             color=T.TEXT_SECONDARY),
                                     ft.Text(
                                         place_text, size=12,
@@ -584,6 +690,15 @@ class _Play:
     def _render_my_hand(self):
         me = self.cfg.local_seat
         ctx = self.hand.ctx
+        if self.spectator:
+            # 旁观者不展示任何一家的手牌（联机时手牌信息只属于座上玩家）
+            self.my_hand_col.controls = [
+                ft.Text("观战中 · 手牌仅座上玩家可见", size=13, color=MUTED),
+                ft.Text("出牌记录见下方「近期事件」", size=11, color=MUTED),
+            ]
+            if self.hand_box is not None:
+                self.hand_box.height = HAND_BOX_HEIGHT
+            return
         if self._tribute_active():
             # 进贡阶段：手牌区改成进贡面板（先发牌再进贡，用的是这一手的牌）
             self.my_hand_col.controls = [
@@ -596,7 +711,7 @@ class _Play:
             return
         cards = sort_hand(self.hand.hands[me], ctx)
         mine_turn = (self.hand.turn == me and not self.hand.ended
-                     and self.match.winner is None)
+                     and self.match.winner is None and self._is_local(me))
         if not cards:
             rows: List[ft.Control] = [ft.Text("— 已出完 —", size=13,
                                               color=MUTED)]
@@ -696,7 +811,7 @@ class _Play:
             self.hint_text.color = T.TEXT_MUTED
             return
         live = (not self.hand.ended) and self.match.winner is None
-        my_turn = live and self.hand.turn == me
+        my_turn = live and self.hand.turn == me and self._is_local(me)
         self.play_btn.disabled = not my_turn
         self.pass_btn.disabled = not my_turn
         self.clear_btn.disabled = not my_turn or not self.selected
@@ -719,12 +834,24 @@ class _Play:
     # ============================================================
 
     def _log(self, text: str, color: str = FG, bold: bool = False):
+        """写一条事件日志。
+
+        联机时**客人不本地写日志**：所有人的着法都由房主记，随快照增量广播
+        下来（见 ``_push_state`` / ``_apply_state``），避免同一步出现两遍。
+        """
+        if self.net is not None and not self.is_host:
+            return
+        self._append_log(text, color, bold)
+
+    def _append_log(self, text: str, color: str, bold: bool) -> None:
+        """无条件追加一条日志（本地或来自快照增量都走这里）。"""
         style = ft.TextStyle(
             color=color, size=12, font_family="monospace",
             weight=ft.FontWeight.BOLD if bold else ft.FontWeight.NORMAL,
         )
         self._events.append(ft.TextSpan(text + "\n", style))
         self._log_lines.append(text)          # 纯文本副本，赛后落盘用
+        self._log_meta.append((color, bold))
         self.events_text.spans = list(self._events)
         self.events_text.value = ""
         try:
@@ -778,6 +905,8 @@ class _Play:
 
     def _on_play(self, _e):
         me = self.cfg.local_seat
+        if not self._is_local(me):
+            return
         if self.hand.ended or self.hand.turn != me or not self.selected:
             return
         try:
@@ -796,9 +925,14 @@ class _Play:
             self._log(f"★ {NAMES[me]} 出完（{len(self.hand.out_order)}游）",
                       WIN_COLOR, bold=True)
         self._after_action()
+        # 联机：把这一步告诉房主（房主应用后重推快照给所有人）
+        self._notify_host({"k": "mv", "p": me,
+                           "c": cards_to_json(sorted(combo.cards, key=str))})
 
     def _on_pass(self, _e):
         me = self.cfg.local_seat
+        if not self._is_local(me):
+            return
         if self.hand.ended or self.hand.turn != me:
             return
         if self.hand.current is None:
@@ -841,8 +975,8 @@ class _Play:
         if act is None:
             return head
         me = self.cfg.local_seat
-        if act.player != me or self.cfg.is_auto(act.player):
-            who = f"{NAMES[act.player]}（{self.cfg.controller(act.player)}）"
+        if not self._is_local(act.player):
+            who = f"{NAMES[act.player]}（{self._controller(act.player)}）"
             return ft.Column(
                 [head,
                  ft.Text(f"等待 {who} {_TRIBUTE_VERBS.get(act.kind, '操作')}…",
@@ -954,7 +1088,7 @@ class _Play:
         if tr is None or tr.done:
             return
         act = tr.current()
-        if act is None or self.cfg.is_auto(act.player):
+        if act is None or not self._is_local(act.player):
             return
         if len(self.tribute_sel) != 1:
             self.hint_text.value = "请先点一张牌"
@@ -973,6 +1107,8 @@ class _Play:
         self._tribute_after_step(tr)
         self._refresh()
         self._start_ai()
+        # 联机：把这次进贡 / 还贡的选择告诉房主
+        self._notify_host({"k": "tribute", "card": card_to_json(card)})
 
     def _tribute_after_step(self, tr):
         """进贡走完：真正换牌、把事件写进日志，并记下进贡得来的牌。"""
@@ -1002,6 +1138,10 @@ class _Play:
             self._ai_task = self.page.run_task(self._ai_loop)
 
     async def _ai_loop(self):
+        # 联机时**只有房主跑电脑代打**：房主每步都会重推快照，客人照抄即可；
+        # 两边都跑 AI 只会无故分歧（0.4.8-fix）。
+        if self.net is not None and not self.is_host:
+            return
         while self.alive:
             if self.match.winner is not None:
                 return
@@ -1017,26 +1157,28 @@ class _Play:
                 act = tr.current()
                 if act is None:
                     continue
-                if not self.cfg.is_auto(act.player):
+                if not self._is_auto(act.player):
                     await asyncio.sleep(HUMAN_POLL)   # 等真人，无倒计时
                     continue
                 self._tribute_ai_step(tr)
                 self._refresh()
+                self._push_state()
                 continue
             if self.hand.ended:
                 return
             turn = self.hand.turn
-            if not self.cfg.is_auto(turn):
+            if not self._is_auto(turn):
                 await asyncio.sleep(HUMAN_POLL)     # 等真人，无倒计时
                 continue
             await asyncio.sleep(AI_DELAY)
             if self.hand.ended or self.match.winner is not None:
                 return
             turn = self.hand.turn                  # 等待期间可能已换人
-            if not self.cfg.is_auto(turn):
+            if not self._is_auto(turn):
                 continue
             self._ai_step(turn)
             self._after_action()
+            self._push_state()
 
     def _ai_step(self, turn: int):
         combo = choose(self.hand, turn)
@@ -1065,6 +1207,273 @@ class _Play:
                   bold=bomb)
 
     # ============================================================
+    # 联机同步（房主权威：发牌 + 每步重推整局快照）
+    # ============================================================
+
+    def _setup_net_seats(self) -> None:
+        """按房间席位表排座：房间 0~3 号座 = 牌桌 甲~丁，空位给电脑。
+
+        房间 4 号位起（或还没入座）的人只围观，不看任何一手牌。
+        """
+        members = self.net.roster()
+        by_seat = {m.seat: m for m in members if m.seat >= 0}
+        seats = list(self.cfg.seats)
+        for i in range(4):
+            seats[i] = SEAT_HUMAN if i in by_seat else SEAT_AI
+        if all(s == SEAT_AI for s in seats):        # 兜底：不能全电脑
+            seats[0] = SEAT_HUMAN
+        my_room_seat = self.net.me.seat
+        if 0 <= my_room_seat < 4:
+            self.my_seat = my_room_seat
+            self.spectator = False
+        else:
+            self.my_seat = 0
+            self.spectator = True
+        self.remote_nicks = {
+            i: by_seat[i].nick for i in range(4)
+            if i in by_seat and by_seat[i].mid != self.net.me.mid
+        }
+        self.cfg = replace(self.cfg, seats=tuple(seats),
+                           local_seat=self.my_seat)
+
+    def _is_local(self, seat: int) -> bool:
+        """这个座位是不是由本机玩家亲手操作（旁观者谁都不操作）。"""
+        return not self.spectator and seat == self.my_seat
+
+    def _is_auto(self, seat: int) -> bool:
+        """这个座位是否由电脑代打：本机玩家与远端真人之外的座位。
+
+        联机时远端真人的座位**不**交给电脑 —— 他的着法会随房主快照到达。
+        """
+        if self._is_local(seat):
+            return False
+        if seat in self.remote_nicks:
+            return False
+        return True
+
+    def _controller(self, seat: int) -> str:
+        """界面上的控制器标签：你 / 远端昵称 / 电脑。"""
+        if self._is_local(seat):
+            return self.cfg.local_nick or "你"
+        if seat in self.remote_nicks:
+            return self.remote_nicks[seat]
+        return "电脑"
+
+    def _seat_summary(self) -> str:
+        """座位一览（写进日志 / 落盘元信息）。"""
+        if self.net is None:
+            return self.cfg.summary()
+        return "  ".join(f"{NAMES[p]}·{self._controller(p)}"
+                         for p in range(4))
+
+    def _notify_host(self, data: Dict[str, Any]) -> None:
+        """客人：把本地这一步动作单播给房主（房主应用后重推快照）。"""
+        if self.net is not None and not self.is_host:
+            self.net.send_game_to_host(data)
+
+    def _detach_net(self) -> None:
+        """离开牌桌：摘掉网络回调，别让旧实例继续收玩法消息。"""
+        if self.net is not None:
+            self.net.set_game_handler(None)
+        global _CURRENT_PLAY
+        if _CURRENT_PLAY is self:
+            _CURRENT_PLAY = None
+
+    def _push_state(self) -> None:
+        """房主：把整场局面 + 新的事件日志广播给房间里其他所有人。"""
+        if self.net is None or not self.is_host:
+            return
+        self._seq += 1
+        lines = self._log_lines
+        start = min(self._log_sent, len(lines))
+        delta = [[text, _LOG_COLOR_KEYS.get(color, "fg"), bool(bold)]
+                 for text, (color, bold) in zip(
+                     list(lines)[start:], list(self._log_meta)[start:])]
+        self._log_sent = len(lines)
+        self.net.send_game({"k": "state", "seq": self._seq,
+                            "log_from": start, "log": delta,
+                            "s": serialize_match(self.match, self.hand,
+                                                 self.result)})
+
+    def _on_net(self, msg):
+        """收到房间里的玩法消息。
+
+        房主是权威：只处理客人的动作请求（mv / pass / tribute / next）与
+        req_state；客人只接受房主的 state 快照（按 seq 只采用更新的）。
+        """
+        if self is not _CURRENT_PLAY or not self.alive or self.net is None:
+            return
+        data = msg.get("data") or {}
+        k = data.get("k")
+        try:
+            if k == "req_state":
+                if self.net.is_host:
+                    self._push_state()
+            elif k == "state":
+                if not self.net.is_host:
+                    self._apply_state(data)
+            elif k == "mv":
+                if self.net.is_host:
+                    self._host_apply_play(data)
+            elif k == "pass":
+                if self.net.is_host:
+                    self._host_apply_pass(data)
+            elif k == "tribute":
+                if self.net.is_host:
+                    self._host_apply_tribute(data)
+            elif k == "next":
+                if self.net.is_host:
+                    self._host_next_hand()
+        except Exception:                     # noqa: BLE001
+            # 网络线程里不能炸；坏包忽略即可
+            pass
+
+    def _apply_state(self, data: Dict[str, Any]) -> None:
+        """采用房主推来的整局快照（乱序 / 重传的旧包直接丢弃）。"""
+        try:
+            seq = int(data.get("seq", 0))
+        except (TypeError, ValueError):
+            return
+        if seq <= self._last_seq:
+            return
+        hand = load_match(self.match, data.get("s") or {})
+        if hand is None:
+            return
+        self.hand = hand
+        self._last_seq = seq
+        # ---- 事件日志增量（漏过的开头补一句说明，后续按条数对齐）----
+        try:
+            log_from = int(data.get("log_from", 0) or 0)
+        except (TypeError, ValueError):
+            log_from = self._log_have
+        if log_from > self._log_have:
+            self._append_log(f"……（漏过 {log_from - self._log_have} 条事件）",
+                             MUTED, False)
+            self._log_have = log_from
+        for entry in (data.get("log") or []):
+            try:
+                text = str(entry[0])
+                color = _LOG_COLORS.get(str(entry[1]), FG)
+                bold = bool(entry[2])
+            except (IndexError, TypeError, ValueError):
+                continue
+            self._append_log(text, color, bold)
+            self._log_have += 1
+        # ---- 局面 ----
+        # 结算面板：一手可能由任意一家（含房主上的电脑）走完，客人不本地推导，
+        # 直接用快照里房主的结算结果（0.4.8-fix）。房主发了下一手（res 为空、
+        # 牌局未结束）就清掉面板 —— 不能靠 hand_no 判断：settle 时它已经 +1 了，
+        # 发新手不会再变（0.4.8-fix2：客人会卡在上一手的结算面板上）。
+        if self.hand.ended:
+            res = result_from_json(data.get("res"))
+            if res is not None:
+                self.result = res
+                self._result_hand_no = self.match.hand_no
+        else:
+            self.result = None
+        self.selected.clear()
+        self.tribute_sel.clear()
+        tr = self.hand.tribute
+        if tr is None or tr.done:
+            # 进贡得来的牌：走完才标（中途不标，牌还没换过来）
+            self.gift_marks = (set(tr.received_gifts(self.my_seat))
+                               if tr is not None else set())
+        if not self._synced:
+            self._synced = True
+            self._start_ai()
+        # 整场结束由房主的快照确认，客人在这一刻才落盘（日志已齐）
+        if self.match.winner is not None and not self._log_saved:
+            self._save_match_log()
+        self._refresh()
+
+    # ---------------- 房主：应用客人的动作 ----------------
+
+    def _host_apply_play(self, data: Dict[str, Any]) -> None:
+        seat = data.get("p")
+        cards = cards_from_json(data.get("c"))
+        if not _is_seat(seat) or cards is None:
+            return
+        if self.hand.ended or self.hand.turn != seat:
+            return
+        try:
+            combo = self.hand.play(seat, cards)
+        except IllegalMove:
+            return                          # 客人的局面过期 → 忽略，快照会纠正
+        self._log_play(seat, combo, _is_bomb(combo))
+        if seat in self.hand.out_order:
+            self._log(f"★ {NAMES[seat]} 出完（{len(self.hand.out_order)}游）",
+                      WIN_COLOR, bold=True)
+        self._after_action()
+        self._push_state()
+
+    def _host_apply_pass(self, data: Dict[str, Any]) -> None:
+        seat = data.get("p")
+        if not _is_seat(seat):
+            return
+        if self.hand.ended or self.hand.turn != seat:
+            return
+        try:
+            self.hand.pass_turn(seat)
+        except IllegalMove:
+            return
+        self._log(f"{NAMES[seat]} 过", MUTED)
+        self._after_action()
+        self._push_state()
+
+    def _host_apply_tribute(self, data: Dict[str, Any]) -> None:
+        tr = self.hand.tribute
+        if tr is None or tr.done:
+            return
+        card = card_from_json(data.get("card"))
+        if card is None or not tr.choose(card):
+            return
+        self._tribute_after_step(tr)
+        self._refresh()
+        self._push_state()
+
+    def _host_next_hand(self) -> None:
+        r = self.result
+        if r is None or r.match_over:
+            return
+        self._deal_next_hand()
+
+    # ---------------- 客人：要牌 / 席位变化 ----------------
+
+    async def _sync_wait(self) -> None:
+        """没拿到房主快照就周期性重问（房主的视图可能比我们晚建好）。"""
+        for _ in range(40):                     # 最多 20 秒
+            if not self.alive or self._synced or self is not _CURRENT_PLAY:
+                return
+            self.net.send_game_to_host({"k": "req_state"})
+            await asyncio.sleep(0.5)
+
+    async def _net_poll(self) -> None:
+        """联机时周期性按席位表刷新控制器标注（有人入座 / 离开）。"""
+        while self.alive and self is _CURRENT_PLAY and self.net is not None:
+            try:
+                self._refresh_seats_from_room()
+            except Exception:                 # noqa: BLE001
+                pass
+            await asyncio.sleep(1.0)
+
+    def _refresh_seats_from_room(self) -> None:
+        """席位表变了 → 重算远端真人；离开的座位交给电脑代打（房主接管）。"""
+        if self.net is None:
+            return
+        members = self.net.roster()
+        by_seat = {m.seat: m for m in members if m.seat >= 0}
+        remote = {i: by_seat[i].nick for i in range(4)
+                  if i in by_seat and by_seat[i].mid != self.net.me.mid}
+        if remote != self.remote_nicks:
+            gone = [n for s, n in self.remote_nicks.items() if s not in remote]
+            self.remote_nicks = remote
+            if gone and self._synced:
+                self._log(f"（联机）{'、'.join(gone)} 离开了牌桌，"
+                          f"空位由电脑代打", MUTED)
+            if self._synced:
+                self._refresh()
+
+    # ============================================================
     # 流转
     # ============================================================
 
@@ -1072,13 +1481,17 @@ class _Play:
         """任何一次出牌/过牌之后：结算或继续。"""
         if self.hand.ended:
             self.result = settle(self.match, self.hand)
+            self._result_hand_no = self.match.hand_no
             r = self.result
             self._log(
                 "本局结束：" + "  ".join(NAMES[p] for p in r.out_order), MUTED)
             if r.match_over:
                 self._log(f"◆ 整场结束 · 队{r.winner_team} 获胜",
                           WIN_COLOR, bold=True)
-                self._save_match_log()
+                # 联机客人不在此刻落盘：他的日志要等房主快照补齐，
+                # 统一在 _apply_state 里确认 winner 后才写（见那里）
+                if self.net is None or self.is_host:
+                    self._save_match_log()
             else:
                 self._log(
                     f"队{r.winner_team} 升 {r.upgrade} 级 → "
@@ -1114,7 +1527,7 @@ class _Play:
                     "胜方": winner,
                     "局数": self.match.hand_no,
                     "级数": f"{self.match.levels[0]}/{self.match.levels[1]}",
-                    "座位": self.cfg.summary(),
+                    "座位": self._seat_summary(),
                 },
             )
         except Exception as e:                      # noqa: BLE001
@@ -1142,6 +1555,7 @@ class _Play:
             return
         self._save_match_log(False)
         self.alive = False
+        self._detach_net()
         self.navigate(self._leave_target())
 
     def _on_history(self, _e):
@@ -1151,6 +1565,7 @@ class _Play:
             return
         self._save_match_log(False)
         self.alive = False
+        self._detach_net()
         open_history(self.navigate)
 
     def _confirm_leave(self, go):
@@ -1175,14 +1590,29 @@ class _Play:
         self.page.pop_dialog()
         self._save_match_log(False)     # 中途退出也留一份记录
         self.alive = False
+        self._detach_net()
         go()
 
     def _on_after_hand(self, _e):
         r = self.result
         if r is not None and r.match_over:
             self.alive = False
+            self._detach_net()
             self.navigate(self._leave_target())
             return
+        if self.net is not None and not self.is_host:
+            # 客人不洗牌：请房主发下一手，快照回来自然换手（0.4.8-fix：
+            # 此前客人本地 Hand() 会自己随机发一副，又变成各玩各的）
+            self.net.send_game_to_host({"k": "next"})
+            self.hint_text.value = "已请求房主发下一手…"
+            self.hint_text.color = T.TEXT_MUTED
+            self._refresh()
+            return
+        self._deal_next_hand()
+
+    def _deal_next_hand(self):
+        """本地（房主 / 单人）发下一手，并把新局面推给联机房间。"""
+        r = self.result
         self.result = None
         self.match.next_leader = (
             r.out_order[0] if r is not None else self.match.next_leader
@@ -1201,14 +1631,18 @@ class _Play:
                           HEAD_COLOR)
         self._refresh()
         self._start_ai()
+        self._push_state()
 
     def dispose(self):
         """视图被丢弃：兜底再存一次（正常退出走 _on_back，这里是保险）。"""
         self._save_match_log(False)
         self.alive = False
+        self._detach_net()
 
 
 _ACTIVE: List[_Play] = []          # 当前/上一张牌桌（换场时用来收尾）
+# 同一时刻只有「当前正在显示」的牌桌响应网络消息（防路由器缓存里的旧实例）
+_CURRENT_PLAY: "Optional[_Play]" = None
 
 
 def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:

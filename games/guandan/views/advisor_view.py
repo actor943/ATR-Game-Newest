@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import flet as ft
 
+from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
 from core.ui_common import app_bar, page_padding
@@ -18,18 +19,17 @@ def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
         [
             ft.Text("🤖", size=64, text_align=ft.TextAlign.CENTER),
             ft.Container(height=12),
-            ft.Text("AI 建议模式", size=20, weight=ft.FontWeight.BOLD,
-                    color=T.TEXT_PRIMARY),
+            ft.Text(t("guandan.advisor_heading"), size=20,
+                    weight=ft.FontWeight.BOLD, color=T.TEXT_PRIMARY),
             ft.Container(height=8),
-            ft.Text(
-                "输入自己的手牌，算法会基于已记到的牌和手牌组成，"
-                "给出当前最优的出牌建议。",
-                size=13, color=T.TEXT_SECONDARY,
-                text_align=ft.TextAlign.CENTER,
+            ft.Text(t("guandan.advisor_body"),
+                    size=13, color=T.TEXT_SECONDARY,
+                    text_align=ft.TextAlign.CENTER,
             ),
             ft.Container(height=16),
             ft.Container(
-                content=ft.Text("0.5 上线", size=12, color=T.TEXT_INVERT,
+                content=ft.Text(t("guandan.advisor_badge"), size=12,
+                                color=T.TEXT_INVERT,
                                 weight=ft.FontWeight.BOLD),
                 bgcolor=T.ACCENT,
                 border_radius=10,
@@ -42,7 +42,7 @@ def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     return ft.Column(
         [
-            app_bar("AI 建议", on_back=go_back),
+            app_bar(t("guandan.advisor"), on_back=go_back),
             page_padding(
                 ft.Container(
                     content=body,

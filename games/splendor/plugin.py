@@ -3,12 +3,19 @@
 
 from __future__ import annotations
 
+from core.i18n import t
 from core.registry import GamePlugin, MenuItem, RouteSpec
 
 from ..placeholder import build_stub
 
 HOME_PATH = "/room/splendor"
-STUB_NOTE = "璀璨宝石正在筹备中：宝石收集、发展卡与声望结算将陆续开放。"
+
+
+def _stub(page, navigate):
+    """占位页：标题与说明都按当前语言取。"""
+    return build_stub(page, navigate,
+                      t("game.splendor.title"), t("splendor.stub"))
+
 
 plugin = GamePlugin(
     id="splendor",
@@ -19,14 +26,16 @@ plugin = GamePlugin(
         description="收集宝石、换取发展卡，率先累积 15 点声望取胜的轻策略桌游。",
         available=False,
         home_path=HOME_PATH,
+        title_key="game.splendor.title",
+        desc_key="game.splendor.desc",
     ),
     routes=[
         RouteSpec(
             path=HOME_PATH,
             title="Splendor",
-            builder=lambda page, navigate: build_stub(
-                page, navigate, "Splendor", STUB_NOTE),
+            builder=_stub,
             group="splendor",
+            title_key="game.splendor.title",
         ),
     ],
 )

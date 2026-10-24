@@ -31,6 +31,8 @@ import time
 from collections import deque
 from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
+from ..i18n import t
+
 try:                                  # 可选依赖：没有就降级，不阻断启动
     import numpy as np
     import sounddevice as sd
@@ -123,7 +125,7 @@ class VoiceBus:
             self._sock.bind(("", self.port or 0))
             self._sock.settimeout(0.3)
         except OSError as exc:
-            self._notify(f"语音端口打不开：{exc}")
+            self._notify(t("voice.port_error", exc=exc))
             return False
         self._stop.clear()
         self._rx = threading.Thread(target=self._recv_loop, daemon=True,
@@ -150,7 +152,8 @@ class VoiceBus:
                 blocksize=FRAME_SAMPLES, callback=self._mic_cb)
             self._in_stream.start()
         except Exception as exc:            # noqa: BLE001 — 没权限 / 设备被占
-            self._notify(f"麦克风打不开：{type(exc).__name__}: {exc}")
+            self._notify(t("voice.mic_error", kind=type(exc).__name__,
+                           exc=exc))
             self._in_stream = None
             return False
         return True
@@ -167,7 +170,8 @@ class VoiceBus:
                 blocksize=FRAME_SAMPLES, callback=self._play_cb)
             self._out_stream.start()
         except Exception as exc:            # noqa: BLE001
-            self._notify(f"扬声器打不开：{type(exc).__name__}: {exc}")
+            self._notify(t("voice.speaker_error", kind=type(exc).__name__,
+                           exc=exc))
             self._out_stream = None
             return False
         return True

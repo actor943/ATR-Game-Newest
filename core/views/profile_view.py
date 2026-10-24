@@ -13,6 +13,7 @@ from __future__ import annotations
 import flet as ft
 
 from core import ui_theme as ui
+from core.i18n import t
 from core.profile import Profile, random_nick
 from core.registry import NavigateFn
 
@@ -29,17 +30,17 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         box = name_ref.current
         value = (box.value if box else "").strip()
         if not value:
-            tip.value = "名字不能是空的"
+            tip.value = t("profile.empty_error")
             tip.color = ui.tone("danger")
             page.update()
             return
         if len(value) > 16:
-            tip.value = "名字最多 16 个字"
+            tip.value = t("profile.too_long")
             tip.color = ui.tone("danger")
             page.update()
             return
         profile.set_nick(value)
-        tip.value = f"已保存：{profile.nick}"
+        tip.value = t("profile.saved", nick=profile.nick)
         tip.color = ui.tone("ok")
         page.update()
 
@@ -47,7 +48,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         suggestion = random_nick()
         if name_ref.current is not None:
             name_ref.current.value = suggestion
-        tip.value = f"随机一个：{suggestion}（点保存才生效）"
+        tip.value = t("profile.rolled", nick=suggestion)
         tip.color = ui.tone("secondary")
         page.update()
 
@@ -67,22 +68,23 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     body = ft.Column(
         [
-            ui.text("我的", 22, "", ft.FontWeight.BOLD),
+            ui.text(t("profile.title"), 22, "", ft.FontWeight.BOLD),
             ft.Container(height=4),
-            ui.text("这个名字会显示在多人游戏的房间里。", 13, "secondary"),
+            ui.text(t("profile.subtitle"), 13, "secondary"),
             ft.Container(height=18),
             ui.panel(
                 ft.Column(
                     [
-                        row("当前名字", nick),
-                        row("名字来源", "自己起的" if had_nick
-                            else "系统随机（还没改过）"),
+                        row(t("profile.current_nick"), nick),
+                        row(t("profile.nick_source"), t("profile.nick_self")
+                            if had_nick else t("profile.nick_random")),
                     ],
                     spacing=0,
                 )
             ),
             ft.Container(height=18),
-            ui.text("改名字", 12, "secondary", ft.FontWeight.BOLD),
+            ui.text(t("profile.change_nick"), 12, "secondary",
+                    ft.FontWeight.BOLD),
             ft.Container(height=6),
             # 这一行**不 wrap**：wrap 的 Row 里放 expand 输入框会被 flet
             # 撑成一块灰色巨墙（0.4.7 修掉的「没有底的诡异窗口」）
@@ -100,21 +102,21 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                         padding=ft.Padding.symmetric(horizontal=10),
                     ),
                     ft.Container(width=10),
-                    ui.button("随机", None, roll, primary=False, height=44),
+                    ui.button(t("profile.random"), None, roll, primary=False,
+                              height=44),
                     ft.Container(width=10),
-                    ui.button("保存", None, save, height=44),
+                    ui.button(t("profile.save"), None, save, height=44),
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             ft.Container(height=12),
             tip,
             ft.Container(height=20),
-            ui.text("第一次进房间没起过名的话，系统会临时给你一个随机名字，"
-                    "改完之后房间里马上就能看到。", 11, "dim"),
+            ui.text(t("profile.tip"), 11, "dim"),
             ft.Container(expand=True),
         ],
         spacing=0, scroll=ft.ScrollMode.AUTO, expand=True,
         horizontal_alignment=ft.CrossAxisAlignment.START,
     )
 
-    return ui.page("我的", body, on_back=lambda _e: navigate("/"))
+    return ui.page(t("profile.title"), body, on_back=lambda _e: navigate("/"))

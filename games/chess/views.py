@@ -7,6 +7,7 @@ import asyncio
 
 import flet as ft
 
+from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
 from core.ui_common import app_bar, page_padding, menu_card, page_width
@@ -46,21 +47,20 @@ def build_home(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
         open_history(navigate)        # 丢掉缓存，进来看的是最新记录
 
     body = ft.Column([
-        ft.Text("本地双人（一手白、一手黑）：在同一设备上轮流操作。"
-                "支持王车易位、吃过路兵与兵的升变。",
+        ft.Text(t("chess.home.intro"),
                 size=13, color=T.TEXT_SECONDARY),
         ft.Container(height=16),
         ft.Row([
             menu_card(
-                title="开始对局",
-                description="本地双人轮流操作，含悔棋 / 重开 / 换皮肤",
+                title=t("chess.home.play"),
+                description=t("chess.home.play_desc"),
                 icon="♟️",
                 available=True,
                 on_click=go_play,
             ),
             menu_card(
-                title="历史记录",
-                description="回看以前下过的棋局着法",
+                title=t("chess.home.history"),
+                description=t("chess.home.history_desc"),
                 icon="🕘",
                 available=True,
                 on_click=go_history,
@@ -70,7 +70,7 @@ def build_home(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     return ft.Column(
         [
-            app_bar("国际象棋", on_back=go_back),
+            app_bar(t("game.chess.title"), on_back=go_back),
             page_padding(body),
         ],
         expand=True,
@@ -94,6 +94,8 @@ class ChessPlayView:
         self.white_mid: str | None = None
         self.black_mid: str | None = None
         self.opponent_left = False            # 联网中对手中途离场（在场方判胜）
+        # 客人是否已拿到房主局面（没拿到就周期性重问，见 _sync_wait）
+        self._state_synced = self.net is None or bool(self.net.is_host)
 
         # ---- 对局记录（赛后落盘，供历史页回看，底层逻辑见 core/history）----
         self._log_lines: list = []            # 纯文本着法行，赛后保存用
@@ -191,7 +193,14 @@ class ChessPlayView:
             self.net.set_game_handler(self._on_net)
             self._compute_role()
             self._refresh_net_text()
-            self.net.send_game({"k": "req_state"})
+            if self.net.is_host:
+                # 房主进房即把当前局面推给所有人：客人不必等要牌，
+                # 「开始游戏」瞬间视图重建的先后差不会让人停在旧局面
+                # （0.4.8-fix：此前只被动回 req_state，客人那帧常被吞掉）
+                self.net.send_game({"k": "state", "s": self.game.serialize()})
+            else:
+                self.net.send_game({"k": "req_state"})
+                self.page.run_task(self._sync_wait())
             self.page.run_task(self._net_poll())
 
         # 开局记录一行（本地双人 / 联网-白方-黑方-观战）
@@ -602,6 +611,7 @@ class ChessPlayView:
         elif k == "state":
             state = data.get("s")
             if state:
+                self._state_synced = True
                 self.game.load_state(state)
                 # 迟到者从中途局面加入，只记录后续着法
                 if not self._log_lines:
@@ -612,6 +622,14 @@ class ChessPlayView:
         # 任何网络事件后都重算身份（可能有人入座 / 离座）
         self._compute_role()
         self._refresh_net_text()
+
+    async def _sync_wait(self):
+        """没拿到房主局面就周期性重问（房主的视图可能比我们晚建好）。"""
+        for _ in range(40):                     # 最多等 20 秒
+            if self._state_synced or self is not _ACTIVE:
+                return
+            self.net.send_game({"k": "req_state"})
+            await asyncio.sleep(0.5)
 
     async def _net_poll(self):
         """后台轮询席位变化，让「等待对方入座 / 对方离开」等状态及时刷新。"""

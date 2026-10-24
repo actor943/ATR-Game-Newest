@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import flet as ft
 
+from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
 from core.ui_common import app_bar, page_padding, status_pill
@@ -35,7 +36,7 @@ def build_stub(page: ft.Page, navigate: NavigateFn, title: str,
                     ft.Text(title, size=22, weight=ft.FontWeight.BOLD,
                             color=T.TEXT_PRIMARY),
                     ft.Container(width=10),
-                    status_pill("敬请期待", T.TEXT_MUTED),
+                    status_pill(t("common.coming_soon"), T.TEXT_MUTED),
                 ],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
@@ -43,7 +44,7 @@ def build_stub(page: ft.Page, navigate: NavigateFn, title: str,
             ft.Text(note, size=14, color=T.TEXT_SECONDARY),
             ft.Container(height=24),
             ft.Button(
-                content=ft.Text("返回"),
+                content=ft.Text(t("common.back")),
                 icon=ft.Icons.ARROW_BACK,
                 height=40,
                 bgcolor=T.PRIMARY,

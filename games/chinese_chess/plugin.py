@@ -3,12 +3,19 @@
 
 from __future__ import annotations
 
+from core.i18n import t
 from core.registry import GamePlugin, MenuItem, RouteSpec
 
 from ..placeholder import build_stub
 
 HOME_PATH = "/room/chinese_chess"
-STUB_NOTE = "中国象棋正在筹备中：棋盘、走子规则与 AI 对手将陆续开放。"
+
+
+def _stub(page, navigate):
+    """占位页：标题与说明都按当前语言取。"""
+    return build_stub(page, navigate,
+                      t("game.chinese_chess.title"), t("chinese_chess.stub"))
+
 
 plugin = GamePlugin(
     id="chinese_chess",
@@ -19,14 +26,16 @@ plugin = GamePlugin(
         description="楚河汉界、九宫纵横的传统象棋，马走日、象飞田各有章法。",
         available=False,
         home_path=HOME_PATH,
+        title_key="game.chinese_chess.title",
+        desc_key="game.chinese_chess.desc",
     ),
     routes=[
         RouteSpec(
             path=HOME_PATH,
             title="Chinese Chess",
-            builder=lambda page, navigate: build_stub(
-                page, navigate, "Chinese Chess", STUB_NOTE),
+            builder=_stub,
             group="chinese_chess",
+            title_key="game.chinese_chess.title",
         ),
     ],
 )

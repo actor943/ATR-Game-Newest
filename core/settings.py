@@ -40,6 +40,9 @@ class Settings:
     # 界面风格包（见 core/ui_packs）：默认材料风；"rustic" = 暗黑2/MC 石砖风。
     # 以后社区包往 ui_packs/ 里一注册，设置页就会多出一项。
     ui_pack: str = "default"
+    # 界面语言（见 core/i18n）："zh_CN" 简体中文 / "en_US" English。
+    # 未登记过的代号会被 i18n.normalize 回落到 zh_CN。
+    language: str = "zh_CN"
     data: dict = field(default_factory=dict)
 
     @classmethod
@@ -57,6 +60,7 @@ class Settings:
             last_game=raw.get("last_game", ""),
             window_mode=raw.get("window_mode", "fullscreen"),
             ui_pack=raw.get("ui_pack", "default") or "default",
+            language=raw.get("language", "zh_CN") or "zh_CN",
             data=raw.get("data", {}) or {},
         )
 
