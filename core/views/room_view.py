@@ -229,8 +229,12 @@ class _Lobby:
         self.page.update()
 
     def _voice_area(self, session: RoomSession) -> ft.Control:
-        tip_text = (t("room.voice_tip") if AUDIO_OK
-                    else t("room.voice_unavailable"))
+        tip_text = t("room.voice_tip") if AUDIO_OK else t("room.voice_unavailable")
+        if not AUDIO_OK and session.voice.reason:
+            # 把真实原因带上（模块缺失 / PortAudio 加载失败 / 设备打不开）：
+            # 0.4.8 实测「分发版没有语音库」就是靠这一行区分出来的 ——
+            # 只有笼统文案时，打包漏依赖和本机缺 PortAudio 看起来一模一样。
+            tip_text = f"{tip_text}（{session.voice.reason}）"
         self._voice_row = ft.Row(
             [
                 ui.button(t("room.mic_on"), "🎤", self._toggle_mic, height=40),

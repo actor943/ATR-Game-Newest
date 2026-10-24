@@ -10,7 +10,39 @@ dependencies = [
     #   用的 API 版本一致：代码用的是 1.0 的 API（page.window / show_dialog /
     #   Dropdown.on_select / ft.Button / ft.Icons）。改版本时这里要一起改。
     "flet==1.0.4",
+    # ⚠ 房间语音的 numpy / sounddevice **不要**放这里：这是「所有平台」的公共
+    #   依赖，放进来 Android / iOS / Web 包也会去装 sounddevice —— 它没有
+    #   对应平台的 wheel，构建直接失败；手机端也用不到 PortAudio。
+    #   桌面端语音依赖写在下面 [tool.flet.<平台>.dependencies]（0.4.8-fix）。
 ]
+
+# ---------------------------------------------------------------
+# 房间语音（core/net/voice.py）：sounddevice 内部是 PortAudio 原生库，
+# 只有桌面平台（Windows / macOS / Linux）打得进、也用得上。
+#
+# ⚠ flet build 只把 **project.dependencies + tool.flet.<平台>.dependencies**
+#   装进安装包；requirements.txt 只影响开发 venv 与 CI 环境，不进 bundle。
+#   0.4.8 实测 bug：语音库只加在 requirements.txt 里 → 源码运行能开麦，
+#   分发版却提示「没有语音库」。要改就改这里（requirements.txt 保持对齐即可）。
+# ---------------------------------------------------------------
+
+[tool.flet.macos]
+dependencies = ["numpy>=1.26", "sounddevice>=0.4.6"]
+
+[tool.flet.windows]
+dependencies = ["numpy>=1.26", "sounddevice>=0.4.6"]
+
+[tool.flet.linux]
+dependencies = ["numpy>=1.26", "sounddevice>=0.4.6"]
+
+# macOS 麦克风权限：没有这条键，系统会**直接拒绝**录音（连授权弹窗都不弹），
+# 分发版里语音等于废掉 —— 库装齐了也不够，权限说明必须一起给。
+[tool.flet.macos.info]
+NSMicrophoneUsageDescription = "与同房玩家语音聊天需要访问麦克风；仅在你手动打开麦克风时采集，音频只发往同一局域网内的对局设备。"
+
+# iOS 同理（当前 iOS 包不带语音库，权限键先留着，将来上 iOS 语音不用再找）。
+[tool.flet.ios.info]
+NSMicrophoneUsageDescription = "与同房玩家语音聊天需要访问麦克风；仅在你手动打开麦克风时采集，音频只发往同一局域网内的对局设备。"
 
 # ---------------------------------------------------------------
 # Flet 打包配置（flet build apk / macos / ipa 都会读这里的 [tool.flet]）

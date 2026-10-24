@@ -1,8 +1,9 @@
 # ATR Game 0.4.8 — 依赖清单
 #
-# 结论先说：**应用运行时只依赖 flet 一个第三方库**，其余全部是 Python 标准库
-# （asyncio / collections / dataclasses / datetime / enum / json / logging /
-#  math / os / pathlib / platform / random / typing / uuid / argparse）。
+# 结论先说：**桌面运行时依赖 flet +（可选）numpy / sounddevice**，其余全部是
+# Python 标准库（asyncio / collections / dataclasses / datetime / enum / json /
+# logging / math / os / pathlib / platform / random / typing / uuid / argparse）。
+# 其中 numpy / sounddevice 只服务房间语音（core/net/voice.py），缺了不影响启动。
 # 安装：pip install -r requirements.txt
 # 环境：Python ≥ 3.10（本机 venv 实测 3.14.3）
 #
@@ -14,6 +15,13 @@
 #   （flet build 会把 project.dependencies 转成 requirements 装进 bundle）；
 #   CI 里装的版本只决定 Flutter 客户端。只改其中一处会再次造成
 #   「客户端与运行时版本错配」→ 运行起来白屏、窗口模式不生效。
+#
+# ⚠⚠ 语音库曾经就这样漏过一次（0.4.8 实测）：只在本文件里加了 numpy /
+#   sounddevice，源码运行能开麦，分发版却提示「没有语音库」—— 因为 flet build
+#   装进 bundle 的是 pyproject.toml 的依赖，**本文件不进安装包**。
+#   桌面端语音依赖现在写在 pyproject.toml 的 [tool.flet.macos/.windows/.linux]
+#   .dependencies 里（按平台声明，Android/iOS 不装、也没有 wheel）。
+#   改语音依赖时：pyproject.toml 的平台表 + 本文件，两处一起改。
 
 # ⚠ 用 [all] 把 flet-cli / flet-desktop / flet-web 一起锁到同版本：
 #   flet 自己只在 extras 里钉这几个子包，裸装 flet 不会带上它们，
@@ -23,6 +31,9 @@ flet[all]==1.0.4
 # ---------------------------------------------------------------------
 # 【可选】房间语音聊天。缺了不影响启动，只是房间页提示「未安装」，
 # 手机端打包用不上 PortAudio，也就不会绑死这套原生库。
+# 注意：这两个包要进**分发版**，必须同步写在 pyproject.toml 的
+#   [tool.flet.macos.dependencies] / [tool.flet.windows.dependencies] /
+#   [tool.flet.linux.dependencies] 里（见文件顶部说明）。
 # ---------------------------------------------------------------------
 numpy>=1.26
 sounddevice>=0.4.6

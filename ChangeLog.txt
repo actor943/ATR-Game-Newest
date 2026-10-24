@@ -2,6 +2,37 @@ Version:
 
 0.4.8（国际象棋：从占位到可玩 + 房间联网对弈 + 历史记录）:
 
+Bug（Mac 分发版实测）：IDE 里源码运行开麦正常，分发版却提示
+	「这台机器没有语音库，装了 sounddevice + numpy 后才能说话」
+	根因：**打包漏依赖**。flet build 装进安装包的是 pyproject.toml 的依赖
+		（project.dependencies + tool.flet.<平台>.dependencies），
+		requirements.txt 只影响开发 venv / CI，**不进 bundle**；
+		而语音库（numpy / sounddevice）此前只加在 requirements.txt 里，
+		分发的 .app 里根本没有这两个模块 → import 失败 → AUDIO_OK=False
+	另有一个隐藏坑：macOS 的麦克风权限说明（NSMicrophoneUsageDescription）
+		缺失时，系统会直接拒绝录音（连授权弹窗都不弹），库装齐了也开不了麦
+	修（pyproject.toml）：语音依赖改为**按平台声明**，只进桌面包 ——
+		[tool.flet.macos/.windows/.linux].dependencies =
+			["numpy>=1.26", "sounddevice>=0.4.6"]
+		（不放 project.dependencies：那是全平台公共依赖，会让 Android / iOS /
+		 Web 包也去装 sounddevice——没有对应 wheel，构建直接失败）
+		新增 [tool.flet.macos.info] / [tool.flet.ios.info] 的
+			NSMicrophoneUsageDescription，macOS 弹窗授权麦克风
+	修（requirements.txt）：更正「运行时只依赖 flet」的过时结论，写清
+		「pyproject 才进包、本文件不进」，并标注两处必须同步修改
+	修（CI，.github/workflows/build.yml）：构建完成后翻产物，桌面包
+		（windows / macos）里必须能找到 sounddevice / numpy，找不到直接
+		让 workflow 红掉并提示去改 pyproject.toml 的平台依赖表 —— 这类
+		「打包漏依赖」从此在 CI 就能拦住，不再等用户机上才发现；
+		apk 故意不查（Android 没有对应 wheel，也不该装）
+	修（core/views/room_view.py）：语音不可用时把真实原因
+		（VoiceBus.reason：模块缺失 / PortAudio 加载失败 / 设备打不开）
+		一并显示——只有笼统文案时，「打包漏依赖」和「本机缺 PortAudio」
+		看起来一模一样，这次就是靠重打包前的手工 import 才区分出来
+	备注：serious_python 打的桌面包用 Python 3.14（由 requires-python 取
+		支持的最高版本），numpy / sounddevice 均有对应 wheel，无需本机
+		PortAudio；重新打包后语音依赖即随 bundle 分发
+
 Bug（多人实测）：点「开始对局」后各人进入**不同的对局**（牌不一样 / 进度对不上），
 	且对局内容没有同步（出牌记录、结算面板各是各的）
 	根因一（掼蛋）：牌桌视图此前**完全没有联机同步**——每个客户端都自己
