@@ -2,7 +2,24 @@ Version:
 
 0.4.8（国际象棋：从占位到可玩 + 房间联网对弈 + 历史记录）:
 
-Bug（Mac 分发版实测）：IDE 里源码运行开麦正常，分发版却提示
+Bug（多人实测）：房主点「开始」后，**客人不进入对局**，停在房间页
+	根因：flet 1.0 的 page.run_task() 只收**协程函数**，传协程对象直接
+		TypeError("handler must be a coroutine function")。而客人专属
+		分支写的是 run_task(self._sync_wait())——带了括号，传的是协程
+		对象：异常从对局页 build() 一路冒回房间页轮询协程，轮询静默死亡，
+		且因为 _get_or_build 抛在 _swap 之前，页面还停在房间页，
+		用户侧看不到任何报错（只有控制台里有 TypeError）
+	修：掼蛋 / 象棋的 run_task 调用一律传方法不带括号
+		（games/guandan/views/play_view.py、games/chess/views.py）
+	顺带修掉同文件里另一个**联机象棋从来打不开对局页**的既有 bug：
+		_compute_role() 把 roster()（返回 List[Member]）当字典调 .values()
+		→ AttributeError；现已按列表遍历
+	验证：假 ft.Page 忠实模拟 flet run_task 的校验，两端真实 UDP 会话 +
+		真实 Router 全链路：掼蛋双方进对局且客人同步到房主发的牌；
+		象棋双方进对局、身份正确分配（白 / 黑）、零任务异常
+
+Bug（多人实测）：房主点「开始」后各人进入**不同的对局**（牌不一样 / 进度对不上），
+	且对局内容没有同步（出牌记录、结算面板各是各的）
 	「这台机器没有语音库，装了 sounddevice + numpy 后才能说话」
 	根因：**打包漏依赖**。flet build 装进安装包的是 pyproject.toml 的依赖
 		（project.dependencies + tool.flet.<平台>.dependencies），

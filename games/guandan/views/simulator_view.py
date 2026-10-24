@@ -291,13 +291,11 @@ class _Session:
         self._scroll_events()
 
     def _scroll_events(self):
-        """新行跟随到底部；失败无副作用（auto_scroll 已兜底）。"""
-        try:
-            self.events_scroll.scroll_to(
-                offset=float(self.events_text.height or EVENTS_HEIGHT),
-                duration=0)
-        except Exception:
-            pass
+        """新行跟随到底部由 events_scroll 的 auto_scroll=True 负责。
+
+        （原先这里手动 scroll_to，但 flet 1.0 里它是协程，不 await 只会刷
+        「coroutine never awaited」告警，故移除。）
+        """
 
     def _reset_visuals(self):
         for p in range(4):

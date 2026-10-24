@@ -435,7 +435,7 @@ class _Play:
                 self._start_ai()
             else:
                 self.net.send_game_to_host({"k": "req_state"})
-                self.page.run_task(self._sync_wait())
+                self.page.run_task(self._sync_wait)      # 传方法，别带括号！
             self.page.run_task(self._net_poll)
         self._refresh()
         if self.net is None:
@@ -854,10 +854,8 @@ class _Play:
         self._log_meta.append((color, bold))
         self.events_text.spans = list(self._events)
         self.events_text.value = ""
-        try:
-            self.events_inner.scroll_to(offset=float(EVENTS_HEIGHT), duration=0)
-        except Exception:
-            pass
+        # 跟随到底部靠 events_inner 的 auto_scroll=True；不再手动 scroll_to ——
+        # flet 1.0 里它是协程，不 await 只会刷「never awaited」告警
 
     # ============================================================
     # 真人操作

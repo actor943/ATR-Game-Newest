@@ -200,8 +200,9 @@ class ChessPlayView:
                 self.net.send_game({"k": "state", "s": self.game.serialize()})
             else:
                 self.net.send_game({"k": "req_state"})
-                self.page.run_task(self._sync_wait())
-            self.page.run_task(self._net_poll())
+                self.page.run_task(self._sync_wait)      # 传方法，别带括号！
+            self.page.run_task(self._net_poll)           # 同上（带括号会
+            # TypeError: handler must be a coroutine function，对联机双方都生效）
 
         # 开局记录一行（本地双人 / 联网-白方-黑方-观战）
         self._log_lines.append(f"对局开始：{self._mode_label()}")
@@ -431,9 +432,9 @@ class ChessPlayView:
         if self.net is None:
             self.role = "local"
             return
-        members = self.net.roster()
+        members = self.net.roster()          # 返回 List[Member]（按座位排）
         me = self.net.me
-        seated = sorted((m for m in members.values() if m.seat >= 0),
+        seated = sorted((m for m in members if m.seat >= 0),
                         key=lambda m: m.seat)
         players = [m for m in seated if m.seat < self.players]
         white_mid = players[0].mid if len(players) > 0 else None
