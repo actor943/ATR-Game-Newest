@@ -426,17 +426,23 @@ class _Play:
         )
         self._log(f"对局开始：{self._seat_summary()}", HEAD_COLOR, bold=True)
         if self.net is not None:
-            # 联机：接管会话的玩法消息；房主当即推牌，客人向房主要牌
+            # 联机：接管会话的玩法消息；房主当即推牌，客人向房主要牌。
+            # 整段兜底：网络/序列化任何一环出错都只影响联机，不能把牌桌页
+            # 带崩（手机上未捕获异常 = "Error running app" 红屏）。
             global _CURRENT_PLAY
             _CURRENT_PLAY = self
-            self.net.set_game_handler(self._on_net)
-            if self.is_host:
-                self._push_state()
-                self._start_ai()
-            else:
-                self.net.send_game_to_host({"k": "req_state"})
-                self.page.run_task(self._sync_wait)      # 传方法，别带括号！
-            self.page.run_task(self._net_poll)
+            try:
+                self.net.set_game_handler(self._on_net)
+                if self.is_host:
+                    self._push_state()
+                    self._start_ai()
+                else:
+                    self.net.send_game_to_host({"k": "req_state"})
+                    self.page.run_task(self._sync_wait)  # 传方法，别带括号！
+                self.page.run_task(self._net_poll)
+            except Exception as exc:
+                print(f"[guandan] 联机初始化失败，按等待状态继续：{exc!r}")
+                self._synced = False
         self._refresh()
         if self.net is None:
             self._start_ai()

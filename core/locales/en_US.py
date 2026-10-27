@@ -188,6 +188,8 @@ STRINGS: dict[str, str] = {
     "room.kicked": "The host removed you from the room",
     "room.game_not_ready": "\"{game}\" is not wired into the online room yet "
                            "— just gather everyone for now.",
+    "room.game_failed": "The game screen failed to open (see the logs). "
+                        "Stay in the room and try again.",
 
     # ---------------- networking ----------------
     "net.wrong_code": "Wrong room code",

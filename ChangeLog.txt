@@ -2,6 +2,28 @@ Version:
 
 0.4.8（国际象棋：从占位到可玩 + 房间联网对弈 + 历史记录）:
 
+Bug（手机端多人实测）：联机象棋一点「开始对局」就整屏红屏
+	「Error running app: 'list' object has no attribute 'values'」，
+	应用直接不可用（单机模式不会进联机分支，所以复现不出来）
+	根因：games/chess/views.py 的 _compute_role() 把 roster() 的返回值
+		当字典用——RoomSession.roster() 返回的是 List[Member]，
+		代码却写了 members.values() → AttributeError；异常发生在
+		对局页 build() 里，手机端未捕获异常 = flet 红屏
+	修：按列表遍历（已随 0.4.8-fix3 进主干，本次重打包后生效）；
+		另外再加三道保险，让「对局页建不起来」不再等于「整个应用不可用」：
+	修（core/router.py）：视图构建抛异常时兜底成一张错误页（打完整栈
+		+ 可返回主菜单），不再把异常冒给 flet 的事件处理 → 不再红屏
+	修（core/views/room_view.py）：进对局失败时留在房间并提示
+		（新文案 room.game_failed）；房间轮询整段兜底——席位表 / 渲染 /
+		刷新任何一环出错都不再带走轮询（轮询一死，这端就再也收不到
+		房主的「开始」广播）
+	修（games/chess/views.py、games/guandan/views/play_view.py）：
+		联机初始化整段 try/except；身份算不出来时降级成观战而不是崩掉
+	验证：假 ft.Page 忠实模拟 flet run_task 的校验，两端真实 UDP 会话 +
+		真实 Router 全链路：象棋双方进对局、身份正确分配（白 / 黑）、
+		零任务异常；roster() 返回列表不再报错；roster() 抛异常时对局页
+		照常打开（降级观战）；视图构建抛异常时 Router 兜底不冒泡
+
 Bug（多人实测）：房主点「开始」后，**客人不进入对局**，停在房间页
 	根因：flet 1.0 的 page.run_task() 只收**协程函数**，传协程对象直接
 		TypeError("handler must be a coroutine function")。而客人专属

@@ -353,7 +353,15 @@ class _Lobby:
         session.begin_game()
         route = GAME_ROOM_ROUTE.get(session.info.game_id)
         if route:
-            _enter_game_route(self.navigate, route)
+            # 对局页构建失败不能让这个点击处理抛出去：手机上未捕获异常
+            # 会直接变成 "Error running app" 红屏，整个应用都得重开。
+            try:
+                _enter_game_route(self.navigate, route)
+            except Exception as exc:              # noqa: BLE001
+                print(f"[room] 进入对局失败：{exc!r}")
+                self.tip.value = t("room.game_failed")
+                self.tip.color = ui.tone("danger")
+                self.page.update()
         else:
             self.tip.value = t("room.game_not_ready",
                                game=session.info.game_title)
@@ -448,42 +456,57 @@ class _Lobby:
     # ================================================================
 
     async def _poll(self) -> None:
+        dead_updates = 0
         while True:
             session = self.session
             # 房间被换掉 / 已经离开，旧协程自动收摊（别拽着上一个房间不放）
             if (session is None or not self._polling
                     or session is not _sess.current()):
                 return
-            for kind, payload in session.drain():
-                if kind == "chat":
-                    if not payload.get("own"):   # 自己发的已经本地加过了
-                        self._append_chat(payload.get("nick", "?"),
-                                          payload.get("text", ""))
-                elif kind == "system":
-                    self.system(str(payload))
-                elif kind == "start":
-                    self.system(t("room.start_broadcast"))
-                    route = GAME_ROOM_ROUTE.get(str(payload.get("game", "")))
-                    if route and not session.is_host:
-                        # 同上：每次重建视图以接管网络回调
-                        _enter_game_route(self.navigate, route)
-                        return
-                elif kind == "kicked":
-                    self.system(t("room.kicked"))
-                    self._polling = False
-                    _sess.leave_current()
-                    self.navigate("/multiplayer")
-                    return
-                elif kind == "voice_error":
-                    self.tip.value = str(payload)
-                    self.tip.color = ui.tone("danger")
-            self._render_seats()
-            if self.level.content is not None and session.voice.running:
-                self.level.content = ui.level_bar(session.voice.level)
             try:
+                for kind, payload in session.drain():
+                    if kind == "chat":
+                        if not payload.get("own"):   # 自己发的已经本地加过了
+                            self._append_chat(payload.get("nick", "?"),
+                                              payload.get("text", ""))
+                    elif kind == "system":
+                        self.system(str(payload))
+                    elif kind == "start":
+                        self.system(t("room.start_broadcast"))
+                        route = GAME_ROOM_ROUTE.get(str(payload.get("game", "")))
+                        if route and not session.is_host:
+                            # 同上：每次重建视图以接管网络回调。
+                            # 对局页建不起来时不能把轮询带走（否则这端从此
+                            # 收不到任何房间事件）：提示一句，继续等。
+                            try:
+                                _enter_game_route(self.navigate, route)
+                                return
+                            except Exception as exc:      # noqa: BLE001
+                                print(f"[room] 进入对局失败：{exc!r}")
+                                self.tip.value = t("room.game_failed")
+                                self.tip.color = ui.tone("danger")
+                    elif kind == "kicked":
+                        self.system(t("room.kicked"))
+                        self._polling = False
+                        _sess.leave_current()
+                        self.navigate("/multiplayer")
+                        return
+                    elif kind == "voice_error":
+                        self.tip.value = str(payload)
+                        self.tip.color = ui.tone("danger")
+                self._render_seats()
+                if self.level.content is not None and session.voice.running:
+                    self.level.content = ui.level_bar(session.voice.level)
                 self.page.update()
-            except Exception:                     # noqa: BLE001
-                return
+                dead_updates = 0
+            except Exception as exc:             # noqa: BLE001
+                # 席位表 / 渲染 / 刷新任何一环出错，都不能带走整个轮询
+                # （轮询一死，这端从此收不到任何房间事件，对局也就废了）；
+                # 打印后继续下一轮，连续出错太多次才收摊。
+                print(f"[room] 刷新出错，继续轮询：{exc!r}")
+                dead_updates += 1
+                if dead_updates >= 20:
+                    return
             await asyncio.sleep(POLL)
 
 

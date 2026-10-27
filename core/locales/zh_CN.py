@@ -189,6 +189,7 @@ STRINGS: dict[str, str] = {
     "room.start_broadcast": "房主发起了游戏，出发！",
     "room.kicked": "房主把你移出了房间",
     "room.game_not_ready": "「{game}」还没接好联机房间，先把人凑齐就是了。",
+    "room.game_failed": "对局页没能打开（详情见运行日志）。留在房间里稍等或重试一次。",
 
     # ---------------- 联机（网络层给界面看的话） ----------------
     "net.wrong_code": "房间码不对",

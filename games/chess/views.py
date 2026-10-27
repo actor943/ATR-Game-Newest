@@ -186,23 +186,30 @@ class ChessPlayView:
             toolbar,
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
 
-        # 联网：挂上网络回调、算出身份、后台轮询席位变化，并向房主要当前局面
+        # 联网：挂上网络回调、算出身份、后台轮询席位变化，并向房主要当前局面。
+        # 整段兜底：网络/序列化任何一环出错都只影响联机，不能把棋局页带崩
+        # （手机上未捕获异常 = "Error running app" 红屏，应用直接不可用）。
         if self.net is not None:
             global _ACTIVE
             _ACTIVE = self
-            self.net.set_game_handler(self._on_net)
-            self._compute_role()
-            self._refresh_net_text()
-            if self.net.is_host:
-                # 房主进房即把当前局面推给所有人：客人不必等要牌，
-                # 「开始游戏」瞬间视图重建的先后差不会让人停在旧局面
-                # （0.4.8-fix：此前只被动回 req_state，客人那帧常被吞掉）
-                self.net.send_game({"k": "state", "s": self.game.serialize()})
-            else:
-                self.net.send_game({"k": "req_state"})
-                self.page.run_task(self._sync_wait)      # 传方法，别带括号！
-            self.page.run_task(self._net_poll)           # 同上（带括号会
-            # TypeError: handler must be a coroutine function，对联机双方都生效）
+            try:
+                self.net.set_game_handler(self._on_net)
+                self._compute_role()
+                self._refresh_net_text()
+                if self.net.is_host:
+                    # 房主进房即把当前局面推给所有人：客人不必等要牌，
+                    # 「开始游戏」瞬间视图重建的先后差不会让人停在旧局面
+                    # （0.4.8-fix：此前只被动回 req_state，客人那帧常被吞掉）
+                    self.net.send_game({"k": "state",
+                                        "s": self.game.serialize()})
+                else:
+                    self.net.send_game({"k": "req_state"})
+                    self.page.run_task(self._sync_wait)      # 传方法，别带括号！
+                self.page.run_task(self._net_poll)           # 同上（带括号会
+                # TypeError: handler must be a coroutine function，对联机双方都生效）
+            except Exception as exc:
+                print(f"[chess] 联机初始化失败，按单机观战继续：{exc!r}")
+                self.role = "spectator"
 
         # 开局记录一行（本地双人 / 联网-白方-黑方-观战）
         self._log_lines.append(f"对局开始：{self._mode_label()}")
@@ -432,13 +439,20 @@ class ChessPlayView:
         if self.net is None:
             self.role = "local"
             return
-        members = self.net.roster()          # 返回 List[Member]（按座位排）
         me = self.net.me
-        seated = sorted((m for m in members if m.seat >= 0),
-                        key=lambda m: m.seat)
-        players = [m for m in seated if m.seat < self.players]
-        white_mid = players[0].mid if len(players) > 0 else None
-        black_mid = players[1].mid if len(players) > 1 else None
+        white_mid = black_mid = None
+        try:
+            # roster() 返回的是 List[Member]（按座位排），不是字典——
+            # 早前版本把它当字典调 .values()，联机象棋一进对局页就
+            # AttributeError，手机端直接红屏。
+            members = self.net.roster()
+            seated = sorted((m for m in members if m.seat >= 0),
+                            key=lambda m: m.seat)
+            players = [m for m in seated if m.seat < self.players]
+            white_mid = players[0].mid if len(players) > 0 else None
+            black_mid = players[1].mid if len(players) > 1 else None
+        except Exception as exc:            # 手机端红屏比"降级成观战"糟糕得多
+            print(f"[chess] 算身份失败，先按观战处理：{exc!r}")
         self.white_mid = white_mid
         self.black_mid = black_mid
         if me.mid == white_mid:
