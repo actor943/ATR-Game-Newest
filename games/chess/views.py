@@ -1,29 +1,39 @@
-# games/chess/views.py
 # -*- coding: utf-8 -*-
-"""国际象棋 UI 视图（Flet）。"""
-from __future__ import annotations
+"""国际象棋 UI 视图（Flet）。
 
-import asyncio
+模块划分
+--------
+原文件 660 多行，现在按职责拆开（``ChessPlayView`` 用 mixin 组合起来）：
+
+============================== ========================================== ==========
+模块                         负责什么                                  行数量级
+============================== ========================================== ==========
+``views.py``（本文件）        子菜单 + 视图骨架 + 工具栏 + 生命周期    约 190
+``views_board.py``            棋盘画面、点格子走子、升变选择          约 200
+``views_sync.py``             联机身份计算、局面同步、席位轮询        约 210
+``views_record.py``           棋谱记录与落盘                          约 100
+============================== ========================================== ==========
+
+同一时刻只有「当前正在显示」的那一个象棋视图才应该响应网络消息，
+避免路由器缓存的旧视图实例仍在后台收消息（见 ``_ACTIVE``）。
+"""
+
+from __future__ import annotations
 
 import flet as ft
 
 from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
-from core.ui_common import app_bar, page_padding, menu_card, page_width
+from core.ui_common import app_bar, page_padding, menu_card
 from core.net import session as _sess
 from core import registry
-from core import history
 
-from .engine import ChessGame, PROMO_ORDER
-from .assets import available_themes, piece_image_src
-
-# 棋盘配色（木质风格，不随主题卡片色变化，避免视觉冲突）
-LIGHT_SQ = "#F0D9B5"
-DARK_SQ = "#B58863"
-SELECTED = "#7B61FF"
-LASTMOVE = "#C8E6C9"
-CHECK_TINT = "#FF8A80"
+from .engine import ChessGame
+from .assets import available_themes
+from .views_board import ChessBoardMixin
+from .views_record import ChessRecordMixin
+from .views_sync import ChessSyncMixin
 
 # 同一时刻只有「当前正在显示」的那一个象棋视图才应该响应网络消息，
 # 避免路由器缓存的旧视图实例仍在后台收消息。
@@ -76,8 +86,7 @@ def build_home(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
         expand=True,
     )
 
-
-class ChessPlayView:
+class ChessPlayView(ChessBoardMixin, ChessSyncMixin, ChessRecordMixin):
     def __init__(self, page: ft.Page, navigate: NavigateFn):
         self.page = page
         self.navigate = navigate
@@ -220,444 +229,15 @@ class ChessPlayView:
         ], expand=True)
 
     # ------------------------------------------------------------------
-    def _cell_size(self) -> int:
-        avail = page_width(self.page) - 2 * getattr(T, "PADDING", 16) - 12
-        board_w = min(avail, 460)
-        return max(34, int(board_w / 8))
-
-    def _render_board(self):
-        size = self._cell_size()
-        row_idxs = list(range(8)) if not self.flip else list(range(7, -1, -1))
-        col_idxs = list(range(8)) if not self.flip else list(range(7, -1, -1))
-
-        valid = set()
-        if self.selected_pos:
-            valid = {(r, c) for (r, c) in self.game.get_valid_moves(*self.selected_pos)}
-
-        lm = self.game.last_move
-        last_set = set()
-        if lm:
-            last_set = {(lm[0], lm[1]), (lm[2], lm[3])}
-
-        rows = []
-        for r in row_idxs:
-            cells = []
-            for c in col_idxs:
-                cells.append(self._make_cell(r, c, size, valid, last_set))
-            rows.append(ft.Row(cells, spacing=0))
-        self.board_container.content = ft.Column(rows, spacing=0)
-        self.board_container.width = size * 8 + 4
-
-    def _make_cell(self, r, c, size, valid, last_set) -> ft.Control:
-        piece = self.game.get_piece(r, c)
-        is_light = (r + c) % 2 == 0
-        bgcolor = LIGHT_SQ if is_light else DARK_SQ
-
-        if (r, c) == self.selected_pos:
-            bgcolor = SELECTED
-        elif (r, c) in last_set:
-            bgcolor = LASTMOVE
-        if self.game.in_check(self.game.turn) and piece == self.game.turn + "K":
-            bgcolor = CHECK_TINT
-
-        img = None
-        if piece:
-            img = ft.Image(
-                src=piece_image_src(piece, self.theme),
-                width=size - 6, height=size - 6,
-                fit=ft.BoxFit.CONTAIN,
-            )
-        base = ft.Container(
-            content=img, alignment=ft.alignment.Alignment(0, 0),
-            width=size, height=size,
-        )
-
-        if (r, c) in valid:
-            dot = ft.Container(
-                width=14 if not piece else size - 10,
-                height=14 if not piece else size - 10,
-                border_radius=7 if not piece else (size - 10) / 2,
-                bgcolor=None if piece else SELECTED,
-                border=None if not piece else ft.Border.all(3, SELECTED),
-                opacity=0.55,
-            )
-            base = ft.Stack(
-                [
-                    ft.Container(content=img, alignment=ft.alignment.Alignment(0, 0),
-                                 width=size, height=size),
-                    ft.Container(content=dot, alignment=ft.alignment.Alignment(0, 0),
-                                 width=size, height=size),
-                ],
-                width=size, height=size,
-            )
-
-        return ft.Container(
-            content=base,
-            bgcolor=bgcolor,
-            width=size, height=size,
-            on_click=lambda e, row=r, col=c: self._on_cell_click(row, col),
-        )
-
+    # 生命周期辅助
     # ------------------------------------------------------------------
-    def _on_cell_click(self, r: int, c: int):
-        # 联网：对手已离场，对局结束，不能再走
-        if self.opponent_left:
-            self._toast("对局已结束（对手离场）")
-            return
-        # 联网观战：不能操作棋盘
-        if self.net is not None and self.role == "spectator":
-            self._toast("你正在观战，不能走子")
-            return
-        # 联网对局：只能走「轮到自己」的那一方
-        if self.net is not None and self.role not in ("w", "b"):
-            return
-        if self.net is not None and self.role != self.game.turn:
-            self._toast("还没轮到你")
-            return
+    def _is_active_view(self) -> bool:
+        """我是不是「当前正在显示」的那一个棋局视图。
 
-        # 1. 已选中棋子且点击合法目标 → 走子（可能需要升变）
-        if self.selected_pos:
-            fr, fc = self.selected_pos
-            if (r, c) in self.game.get_valid_moves(fr, fc):
-                piece = self.game.get_piece(fr, fc)
-                if piece and piece[1] == "P" and r in (0, 7):
-                    self.promotion_pending = (fr, fc, r, c)
-                    self._open_promo(piece[0])
-                    return
-                self._do_move(fr, fc, r, c, None)
-                return
-
-        # 2. 选中 / 取消选中自己的棋子
-        piece = self.game.get_piece(r, c)
-        if piece and piece[0] == self.game.turn:
-            self.selected_pos = (r, c)
-        else:
-            self.selected_pos = None
-        self._render_board()
-        self.page.update()
-
-    def _do_move(self, fr, fc, tr, tc, promo):
-        color = self.game.turn               # 走子方颜色（走之前）
-        ok = self.game.move(fr, fc, tr, tc, promotion=promo)
-        if ok:
-            self._record_ply(color, fr, fc, tr, tc, promo)
-            self.selected_pos = None
-            self._render_board()
-            self._update_status()
-            # 联网：把这一步可靠地发给房间里其他人
-            if self.net is not None and self.role in ("w", "b"):
-                self.net.send_game({"k": "mv", "fr": fr, "fc": fc,
-                                    "tr": tr, "tc": tc, "p": promo or ""})
-            self._maybe_save_on_end()
-
-    # ------------------------------------------------------------------
-    def _open_promo(self, color: str):
-        btns = []
-        for pc in PROMO_ORDER:
-            code = color + pc
-            btns.append(
-                ft.Container(
-                    content=ft.Image(src=piece_image_src(code, self.theme),
-                                     width=46, height=46, fit=ft.BoxFit.CONTAIN),
-                    ink=True,
-                    on_click=lambda e, p=pc: self._choose_promo(p),
-                )
-            )
-        dlg = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("选择升变兵种"),
-            content=ft.Row(btns, spacing=10, alignment=ft.MainAxisAlignment.CENTER),
-            actions=[ft.TextButton("取消", on_click=self._cancel_promo)],
-        )
-        self.page.show_dialog(dlg)
-
-    def _choose_promo(self, promo: str):
-        self.page.pop_dialog()
-        if self.promotion_pending:
-            fr, fc, tr, tc = self.promotion_pending
-            self.promotion_pending = None
-            self._do_move(fr, fc, tr, tc, promo)
-
-    def _cancel_promo(self, _e):
-        self.page.pop_dialog()
-        self.promotion_pending = None
-
-    # ------------------------------------------------------------------
-    def _on_theme_change(self, e):
-        self.theme = e.control.value
-        self._render_board()
-        self.page.update()
-
-    def _update_status(self):
-        # 联网：对手中途离场，直接判在场方获胜
-        if self.opponent_left:
-            side = "白方" if self.role == "w" else "黑方"
-            self.status_text.value = f"🏁 对方离开，{side}获胜！"
-            self.status_text.color = T.DANGER
-            self._save_match_log(opponent_left=True)
-            self.page.update()
-            return
-        txt = self.game.status_text()
-        color = T.TEXT_PRIMARY
-        if self.game.is_checkmate():
-            color = T.DANGER
-            txt = "🏁 " + txt
-        elif self.game.in_check(self.game.turn):
-            color = T.WARNING
-            txt = "⚠ " + ("白方被将军！" if self.game.turn == "w" else "黑方被将军！")
-        self.status_text.value = txt
-        self.status_text.color = color
-        self.page.update()
-
-    # ------------------------------------------------------------------
-    # 联网对弈相关
-    # ------------------------------------------------------------------
-    def _toast(self, msg: str):
-        try:
-            self.page.pop_dialog()
-        except Exception:
-            pass
-        try:
-            self.page.show_dialog(
-                ft.AlertDialog(
-                    modal=False,
-                    content=ft.Text(msg),
-                    actions=[ft.TextButton(
-                        "知道了",
-                        on_click=lambda _e: self.page.pop_dialog())],
-                )
-            )
-        except Exception:
-            pass
-
-    def _compute_role(self):
-        """根据房间席位表算出本机是白方 / 黑方 / 观战。
-
-        规则：座位号最小的两个上场座位（< players）分别是白、黑；
-        其余座位以及未入座的人都是观战。
+        路由器会缓存视图，旧实例可能还在后台活着；只有当前显示的那一个
+        才应该响应网络消息，否则客人会看到两个棋盘同时在动。
         """
-        if self.net is None:
-            self.role = "local"
-            return
-        me = self.net.me
-        white_mid = black_mid = None
-        try:
-            # roster() 返回的是 List[Member]（按座位排），不是字典——
-            # 早前版本把它当字典调 .values()，联机象棋一进对局页就
-            # AttributeError，手机端直接红屏。
-            members = self.net.roster()
-            seated = sorted((m for m in members if m.seat >= 0),
-                            key=lambda m: m.seat)
-            players = [m for m in seated if m.seat < self.players]
-            white_mid = players[0].mid if len(players) > 0 else None
-            black_mid = players[1].mid if len(players) > 1 else None
-        except Exception as exc:            # 手机端红屏比"降级成观战"糟糕得多
-            print(f"[chess] 算身份失败，先按观战处理：{exc!r}")
-        self.white_mid = white_mid
-        self.black_mid = black_mid
-        if me.mid == white_mid:
-            self.role = "w"
-        elif me.mid == black_mid:
-            self.role = "b"
-        else:
-            self.role = "spectator"
-
-    def _evaluate_presence(self):
-        """判断联网对手是否中途离场（在场方直接判胜）。
-
-        仅在「本机是上场玩家且对面的玩家座位已空、对局尚未结束」时成立；
-        观战方 / 双方都不在时不判胜（只负责显示谁离开了）。
-        """
-        if self.net is None or self.role not in ("w", "b"):
-            self.opponent_left = False
-            return
-        opp_mid = self.black_mid if self.role == "w" else self.white_mid
-        self.opponent_left = (opp_mid is None) and not self.game.is_game_over()
-
-    def _refresh_net_text(self):
-        if self.net is None or self.page is None:
-            return
-        self._evaluate_presence()
-        if self.opponent_left:
-            self.net_text.value = "对方已离开，可重开新对局"
-            # 判胜文案交给 _update_status 统一显示
-            self._update_status()
-            return
-        if self.role == "local":
-            self.net_text.value = ""
-        elif self.role == "spectator":
-            missing = []
-            if self.white_mid is None:
-                missing.append("白方")
-            if self.black_mid is None:
-                missing.append("黑方")
-            if missing:
-                self.net_text.value = "观战中 · " + "、".join(missing) + "已离开"
-            else:
-                self.net_text.value = "观战中 · 轮到" + (
-                    "白方" if self.game.turn == "w" else "黑方")
-        else:
-            side = "白方" if self.role == "w" else "黑方"
-            opp_mid = self.black_mid if self.role == "w" else self.white_mid
-            if opp_mid is None:
-                self.net_text.value = f"你是{side} · 对方已离开，等待新对手"
-            elif self.role == self.game.turn:
-                self.net_text.value = f"你是{side} · ▶ 轮到你走棋"
-            else:
-                self.net_text.value = f"你是{side} · ⏳ 等待对方"
-        try:
-            self.page.update()
-        except Exception:
-            pass
-
-    # ------------------------------------------------------------------
-    # 对局记录（与掼蛋共用 core/history 的落盘逻辑）
-    # ------------------------------------------------------------------
-    def _mode_label(self) -> str:
-        """这一局的模式，写进记录元信息。"""
-        if self.net is None:
-            return "本地双人"
-        if self.role == "spectator":
-            return "联网-观战"
-        return "联网-" + ("白方" if self.role == "w" else "黑方")
-
-    @staticmethod
-    def _coord(r: int, c: int) -> str:
-        """棋盘坐标 (row, col) → 国际象棋记谱坐标，如 e2、a7。"""
-        return chr(ord("a") + c) + str(8 - r)
-
-    def _record_ply(self, color: str, fr: int, fc: int, tr: int, tc: int,
-                    promo) -> None:
-        """把一步着法追加到落盘日志（纯文本，赛后保存用）。"""
-        self._ply += 1
-        move_no = (self._ply + 1) // 2          # 第几个完整回合（1 起）
-        side = "白" if color == "w" else "黑"
-        promo_s = ("=" + promo) if promo else ""
-        san = (f"{move_no}. {side} {self._coord(fr, fc)}"
-               f"-{self._coord(tr, tc)}{promo_s}")
-        if self.game.is_checkmate():
-            san += " #"                          # 将死
-        elif self.game.in_check(self.game.turn):
-            san += "+"                           # 将军
-        self._log_lines.append(san)
-
-    def _maybe_save_on_end(self) -> None:
-        """对局结束（将死 / 逼和）且还没保存过，就落盘。"""
-        if self.game.is_game_over() and not self._log_saved:
-            self._save_match_log(finished=True)
-
-    def _save_match_log(self, finished: bool = True,
-                        opponent_left: bool = False) -> None:
-        """把这一局的完整着法落盘到应用数据目录（``logs/chess/``）。
-
-        将死 / 逼和 / 对手离场 会存；中途离开（``on_back``）也存（标「中途结束」），
-        这样历史记录里每一局都留得下。同一局只写一次文件。
-        """
-        if self._log_saved or not self._log_lines:
-            return
-        self._log_saved = True
-        if opponent_left:
-            winner = "白方" if self.role == "w" else "黑方"
-            state = "对手离场判胜"
-        elif self.game.is_checkmate():
-            # 轮到走棋的一方被将死 → 对方获胜
-            winner = "黑方" if self.game.turn == "w" else "白方"
-            state = "整场结束"
-        elif self.game.is_stalemate():
-            winner = "和棋"
-            state = "整场结束"
-        elif not finished:
-            winner = "未分胜负"
-            state = "中途结束（未打完）"
-        else:
-            winner = "未分胜负"
-            state = "中途结束（未打完）"
-        mode = self._mode_label()
-        lines = list(self._log_lines) + [
-            f"◆ 记录结束：{state} · 共 {self._ply} 步 · {mode}",
-        ]
-        try:
-            history.save_match_log(
-                "chess", lines,
-                meta={
-                    "状态": state,
-                    "胜方": winner,
-                    "步数": self._ply,
-                    "模式": mode,
-                },
-            )
-        except Exception:                          # noqa: BLE001
-            pass     # 数据目录不可写时静默失败，不影响对局
-
-    def _on_net(self, msg):
-        """收到房间里的玩法消息（来自其他设备）。"""
-        if self is not _ACTIVE or self.net is None:
-            return
-        data = msg.get("data") or {}
-        k = data.get("k")
-        if k == "mv":
-            color = self.game.turn               # 走子方颜色（走之前）
-            self.game.move(data["fr"], data["fc"], data["tr"], data["tc"],
-                           promotion=data.get("p") or None)
-            self._record_ply(color, data["fr"], data["fc"],
-                             data["tr"], data["tc"], data.get("p") or None)
-            self.selected_pos = None
-            self._render_board()
-            self._update_status()
-            self._maybe_save_on_end()
-        elif k == "reset":
-            self.game.reset()
-            self.selected_pos = None
-            self._render_board()
-            self._update_status()
-            # 重开 = 新的一局，记录从头再来
-            self._log_lines = []
-            self._log_saved = False
-            self._ply = 0
-            self._log_lines.append(f"对局开始：{self._mode_label()}")
-        elif k == "undo":
-            self.game.undo()
-            self.selected_pos = None
-            self._render_board()
-            self._update_status()
-        elif k == "req_state":
-            if self.net.is_host:
-                self.net.send_game({"k": "state", "s": self.game.serialize()})
-        elif k == "state":
-            state = data.get("s")
-            if state:
-                self._state_synced = True
-                self.game.load_state(state)
-                # 迟到者从中途局面加入，只记录后续着法
-                if not self._log_lines:
-                    self._log_lines.append("（从中途局面开始记录）")
-                self.selected_pos = None
-                self._render_board()
-                self._update_status()
-        # 任何网络事件后都重算身份（可能有人入座 / 离座）
-        self._compute_role()
-        self._refresh_net_text()
-
-    async def _sync_wait(self):
-        """没拿到房主局面就周期性重问（房主的视图可能比我们晚建好）。"""
-        for _ in range(40):                     # 最多等 20 秒
-            if self._state_synced or self is not _ACTIVE:
-                return
-            self.net.send_game({"k": "req_state"})
-            await asyncio.sleep(0.5)
-
-    async def _net_poll(self):
-        """后台轮询席位变化，让「等待对方入座 / 对方离开」等状态及时刷新。"""
-        while True:
-            if self is not _ACTIVE or self.net is None:
-                return
-            try:
-                self._compute_role()
-                self._refresh_net_text()
-            except Exception:
-                pass
-            await asyncio.sleep(0.6)
-
+        return self is _ACTIVE
 
 def build_play(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     return ChessPlayView(page, navigate).build()

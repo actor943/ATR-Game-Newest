@@ -5,6 +5,8 @@ from .engine import ChessGame
 
 
 def test_initial_moves():
+
+    """开局白棋有 16 种走法。"""
     g = ChessGame()
     assert len(g.legal_moves("w")) == 20, len(g.legal_moves("w"))
     assert g.turn == "w"
@@ -12,6 +14,8 @@ def test_initial_moves():
 
 
 def test_fools_mate():
+
+    """一步将死（fool's mate）：黑方 4 步内被将死。"""
     g = ChessGame()
     seq = [(6, 5, 5, 5),   # 1. f3
            (1, 4, 3, 4),   # 1... e5
@@ -26,6 +30,8 @@ def test_fools_mate():
 
 
 def test_undo():
+
+    """悔棋能把局面恢复到上一步。"""
     g = ChessGame()
     g.move(6, 4, 4, 4)  # e4
     g.move(1, 4, 3, 4)  # e5
@@ -38,6 +44,8 @@ def test_undo():
 
 
 def test_promotion():
+
+    """兵走到底线自动升变（可选车 / 马 / 象 / 后）。"""
     g = ChessGame()
     # 手工摆一个即将升变的白兵
     g._board = [[None] * 8 for _ in range(8)]
@@ -53,6 +61,8 @@ def test_promotion():
 
 
 def test_en_passant():
+
+    """吃过路兵：兵两格直冲后可以横向吃掉旁边的兵。"""
     g = ChessGame()
     g._board = [[None] * 8 for _ in range(8)]
     g._board[7][4] = "wK"
@@ -73,6 +83,8 @@ def test_en_passant():
 
 
 def test_castling_rights():
+
+    """王 / 车动过之后不能��再 castles（易位）。"""
     g = ChessGame()
     # 清出一条可王侧易位的线路：白王 e1、白车 h1，f1/g1 空
     g._board = [[None] * 8 for _ in range(8)]
@@ -92,6 +104,8 @@ def test_castling_rights():
 
 
 def test_check_detection():
+
+    """将军 / 被将军 / 终局判定都正确。"""
     g = ChessGame()
     g._board = [[None] * 8 for _ in range(8)]
     g._board[7][4] = "wK"

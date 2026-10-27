@@ -4,12 +4,12 @@
 from __future__ import annotations
 
 import traceback
-from typing import Callable, Optional
+from typing import Optional
 
 import flet as ft
 
 from . import registry
-from .registry import NavigateFn, RouteSpec
+from .registry import RouteSpec
 
 
 class Router:

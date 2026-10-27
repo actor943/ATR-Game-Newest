@@ -38,6 +38,8 @@ from core.window import (
 
 
 def _section_title(text: str) -> ft.Container:
+
+    """一个小节标题（“语言”“界面风格”这类灰色小字）。"""
     return ft.Container(
         padding=ft.Padding.only(top=12, bottom=4),
         content=ft.Text(text, size=12, weight=ft.FontWeight.BOLD,
@@ -46,6 +48,8 @@ def _section_title(text: str) -> ft.Container:
 
 
 def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
+
+    """设置页：语言 / 界面风格 / 明暗主题 / 快捷键 / 窗口模式 / 数据目录。"""
     state = {"settings": Settings.load()}
 
     theme_text = ft.Text(
@@ -72,6 +76,8 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     )
 
     def go_back(_e):
+
+        """返回主菜单。"""
         navigate("/")
 
     def _rebuild_current_view():
@@ -84,6 +90,8 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
             page.update()
 
     def toggle_theme(e):
+
+        """切换明暗主题。"""
         s = state["settings"]
         s.theme = "dark" if e.control.value else "light"
         s.save()
@@ -98,6 +106,8 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         _rebuild_current_view()
 
     def toggle_shortcut(e):
+
+        """开关「显示快捷键提示」。"""
         s = state["settings"]
         s.show_shortcut_hint = bool(e.control.value)
         s.save()
@@ -106,6 +116,8 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         page.update()
 
     def change_window_mode(e):
+
+        """切换窗口模式（全屏 / 窗口化）。"""
         s = state["settings"]
         s.window_mode = normalize(e.control.value)
         s.save()
@@ -116,6 +128,8 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     def row(label: str, value_text: ft.Text, on_change,
             initial_value: bool) -> ft.Container:
+
+        """设置项的一行：左边标题、右边控件。"""
         return ft.Container(
             padding=ft.Padding.symmetric(horizontal=12, vertical=10),
             border=ft.Border.only(
@@ -145,7 +159,11 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                       vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
     def pick_lang(code: str):
+
+        """选定语言后的处理函数。"""
         def _handler(_e=None) -> None:
+
+            """点一下语言就切：写盘 → 换语言 → 重建当前页。"""
             if code == lang_state["id"]:
                 return
             if not i18n.set_lang(code):       # 写设置 + 改当前语言
@@ -160,6 +178,8 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         return _handler
 
     def _render_lang_row() -> None:
+
+        """重画语言那一行（当前语言要高亮）。"""
         kids: list[ft.Control] = []
         for code, name, note in i18n.languages():
             active = code == lang_state["id"]
@@ -198,6 +218,8 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         return t(f"pack.{meta.id}.name", default=meta.name)
 
     def pack_desc(meta) -> str:
+
+        """取界面包的说明文字。"""
         return t(f"pack.{meta.id}.desc", default=meta.description)
 
     packs = ui.all_packs()
@@ -210,7 +232,11 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     )
 
     def pick_pack(pack_id: str):
+
+        """选定界面包后的处理函数。"""
         def _handler(_e=None) -> None:
+
+            """点一下语言就切：写盘 → 换语言 → 重建当前页。"""
             if pack_id == pack_state["id"]:
                 return
             if not ui.apply(pack_id):        # 写设置 + 覆写 theme.T
@@ -230,6 +256,8 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                       vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
     def _render_pack_row() -> None:
+
+        """重画界面包那一行。"""
         kids: list[ft.Control] = []
         for p in ui.all_packs():
             active = p.meta.id == pack_state["id"]

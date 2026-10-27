@@ -1,5 +1,11 @@
 # -*- coding: utf-8 -*-
-"""牌型速查视图。"""
+"""掼蛋牌型速查视图：一张表把十一种牌型讲清楚。
+
+给新手用的一页速查表：左边牌型名、中间例子、右边一句话说明，
+底部再补一句「就高解释」的规则（同一手牌按最大的牌型算）。
+
+页面内容来自 :data:`CARD_TYPES` 这张表，改牌型只要改那张表。
+"""
 
 from __future__ import annotations
 
@@ -15,6 +21,8 @@ from core.ui_common import app_bar, page_padding
 
 @dataclass(frozen=True)
 class CardType:
+
+    """速查表里的一行：一种牌型的名字、例子、说明与大小次序。"""
     name: str        # 牌型名（中文兜底）
     example: str     # 例：A♠ A♥ A♣ A♦（牌面不翻译）
     desc: str        # 简短说明（中文兜底）
@@ -33,6 +41,9 @@ class CardType:
             else self.desc
 
 
+# 牌型表：按「从小到大」排（rank 越大越难压）。
+# name / example / desc 是中文兜底，name_key / desc_key 是 i18n 键 ——
+# 界面上优先用翻译，翻不到就退回中文。
 CARD_TYPES: list[CardType] = [
     CardType("单张", "A♠", "任意一张牌", 0, "types.single", "types.single_desc"),
     CardType("对子", "A♠ A♥", "两张同点数", 1, "types.pair", "types.pair_desc"),
@@ -59,6 +70,13 @@ CARD_TYPES: list[CardType] = [
 
 
 def _type_row(item: CardType) -> ft.Container:
+    # 炸弹与天王炸用醒目色（橙 / 红），一眼能看出「这几个压得住别人」
+    # 炸弹与天王炸用醒目色（橙 / 红），一眼能看出「这几个压得住别人」
+    # 炸弹与天王炸用醒目色（橙 / 红），一眼能看出「这几个压得住别人」
+    # 炸弹与天王炸用醒目色（橙 / 红），一眼能看出「这几个压得住别人」
+    # 炸弹与天王炸用醒目色（橙 / 红），一眼能看出「这几个压得住别人」
+
+    """把一条牌型说明画成表格里的一行。"""
     rank_colors = {
         7: T.ACCENT, 8: T.ACCENT, 9: T.ACCENT, 10: T.ACCENT, 11: T.DANGER,
     }
@@ -93,6 +111,8 @@ def _type_row(item: CardType) -> ft.Container:
 
 
 def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
+
+    """牌型速查页：顶栏 + 一张牌型表 + 底部小字提示。"""
     def go_back(_e):
         navigate("/g/guandan")
 

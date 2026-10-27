@@ -37,19 +37,14 @@ def menu_card(
     available: bool = True,
     on_click=None,
 ) -> ft.Container:
-    """主菜单与子菜单上的大卡片（同样跟着界面包换皮）。"""
-    return _ui.card(title, description, icon, on_click, available=available)
+    """主菜单与子菜单上的大卡片。
 
-
-def menu_card(
-    title: str,
-    description: str,
-    icon: str,
-    *,
-    available: bool = True,
-    on_click=None,
-) -> ft.Container:
-    """主菜单与子菜单上的大卡片。"""
+    注意：这一份是**固定扁平样式**（不随界面包换皮），未开放的卡片会挂一个
+    「敬请期待」角标。项目里另有一份转发到界面包的实现
+    （:func:`core.ui_theme.card`），一旦要启用界面包皮肤，把下面的实现换成
+    ``return _ui.card(title, description, icon, on_click, available=available)``
+    并补回角标即可。
+    """
     bg = T.SURFACE
     border = T.BORDER
     title_color = T.TEXT_PRIMARY if available else T.TEXT_MUTED

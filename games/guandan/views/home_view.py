@@ -13,7 +13,10 @@ from games.guandan.views.history_view import open_history
 
 
 def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
-    """掼蛋子菜单：开始游戏 / 记牌 / 模拟 / 历史记录 / 牌型速查。"""
+    """掼蛋子菜单：开始游戏 / 记牌 / 模拟 / 历史记录 / 牌型速查。
+
+每个功能一张大卡片，点了就跳到对应的页面。
+"""
 
     def go_play(_e):
         # 每次进对局都重建视图（丢掉路由缓存）：否则上一局（尤其是上一场

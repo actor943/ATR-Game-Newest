@@ -17,6 +17,8 @@ def _stub(page, navigate):
                       t("game.chinese_chess.title"), t("chinese_chess.stub"))
 
 
+# available=False：菜单里这一项会显示成灰的（还点不进去），
+# 等游戏真正做完了再改成 True。
 plugin = GamePlugin(
     id="chinese_chess",
     menu_item=MenuItem(

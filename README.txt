@@ -74,6 +74,7 @@ ATR Game V0.4.8
 
 8. 代码结构
 	app.py				应用入口（注册路由、配置 Page）
+	（逐文件的详细作用见 CODE_INDEX.md —— 代码地图）
 	main.py				兼容壳（让 IDE 直接运行）
 	core/				框架层（不依赖具体游戏）
 		registry.py		游戏插件注册表
@@ -88,9 +89,18 @@ ATR Game V0.4.8
 		net/			局域网联机（0.4.7 新增）
 			__init__.py	消息协议 / JSON 编解码 / 房间码加盐校验
 			discovery.py	UDP 广播：房主喊人、扫描器收人
-			session.py	房间会话：席位权威、可靠重传、心跳、语音协调
+			session.py	房间会话主体：建房/加入/席位/聊天/玩法透传
+			member.py	房间里「一个人」的数据结构
+			session_const.py	心跳/重传/超时的时间参数
+			session_reliable.py	可靠传输：收发、ACK、重传、心跳
+			session_messaging.py	各类包的处理：握手/席位表/聊天/开始
+			session_game.py	玩法消息透传（象棋走子、掼蛋出牌…）
 			voice.py		语音：可选依赖（sounddevice），缺失自动降级
-			selftest.py	联机自检：python -m core.net.selftest
+			selftest.py	逻辑自检入口：python -m games.guandan.selftest
+			selftest_common.py	自检公共小工具
+			selftest_cards.py	自检：牌与牌型
+			selftest_engine.py	自检：对局引擎
+			selftest_tribute.py	自检：进贡 / 还贡
 		ui_packs/		界面皮肤包（0.4.7-fix1 新增，可插拔）
 			base.py		包契约：颜色令牌 + 零件工厂签名 + 语气翻译
 			material.py	默认包（材料风，跟随明暗主题）
@@ -98,24 +108,40 @@ ATR Game V0.4.8
 			registry.py	包注册表：内置两套，社区包 register 即出现
 		ui_theme.py	界面风格总控：当前包分发、切换、覆写 theme.T 全局换色
 		views/			核心视图（主菜单 / 单人 / 多人 / 房间 / 我的 / 设置）
+			room_view.py	房间大厅骨架（进房/选游戏/开始/离开/轮询）
+			room_widgets.py	房间大厅零件（席位 / 语音 / 聊天）
+			multiplayer_view.py	多人页：创建房间 / 搜索房间
 	games/				游戏插件
 		guandan/		掼蛋
 			analyzer.py	记牌算法（与 0.3 等价）
 			cards.py	模拟器牌面模型（Card、108张牌堆、级牌感知排序）
-			rules.py	模拟器牌型规则（含逢人配）与比较、出/跟牌枚举
-			engine.py	对局状态机（接风、升级、打A胜负、进贡计划）
+			rules.py	牌型枚举（能打出的牌型）+ 门面再导出
+			rules_base.py	牌型枚举与数据结构
+			rules_parse.py	牌型识别（就高解释）
+			rules_compare.py	牌型大小比较
+			engine.py	对局引擎门面（再导出下面四个模块）
+			state.py	对局常量与数据结构（MatchState 等）
+			hand.py	一手牌状态机（出牌/跟牌/过牌/接风）
+			settle.py	升级结算 + 进贡安排
+			serialize.py	联机用 JSON 序列化 / 还原
 			tribute.py	进贡 / 还贡状态机（抗贡、双下、选贡）
 			ai.py		贪心 AI（自对弈 + 进贡自动决策）
 			simulator.py	headless 自对弈：python -m games.guandan.simulator
 			selftest.py	逻辑自检：python -m games.guandan.selftest
 			plugin.py	插件声明
-			views/		6 个视图（牌桌 / 历史 / 记牌 / AI建议 / 全模拟 / 牌型速查）
+			views/		视图（牌桌 / 历史 / 记牌 / AI建议 / 全模拟 / 牌型速查）
+				play_view.py	牌桌组装 + play_const/table/actions/ai/net/flow
+				board_view.py	快速记牌页（+ board_widgets.py 牌面按钮）
+				simulator_view.py	全模拟观战页（+ sim_session.py / sim_const.py）
 		splendor/		占位（仅插件框架）
 		chess/			国际象棋（0.4.8 落地为可玩游戏）
 			engine.py	棋局引擎：走法 / 王车易位 / 吃过路兵 / 升变 /
 					将军·将死·逼和 / 悔棋 / serialize·load_state
 			assets.py	15 套棋子皮肤 + piece_image_src()
-			views.py	棋盘 UI（本地双人 + 房间联网对弈 + 棋谱记录）
+			views.py		棋盘 UI 组装（本地双人 + 房间联网对弈）
+			views_board.py	棋盘画面 / 走子 / 升变
+			views_sync.py	联机身份与局面同步
+			views_record.py	棋谱记录与落盘
 			history_view.py	历史记录页（委托 core/history_view）
 			plugin.py	插件声明（players=2，路由 /g/chess、/g/chess/play、
 					/g/chess/history）

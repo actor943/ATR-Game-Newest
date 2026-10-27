@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 from typing import Dict, List
 
-from . import rules
 from . import tribute
 from .ai import choose
 from .cards import TOTAL_CARDS

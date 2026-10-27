@@ -1,5 +1,49 @@
 Version:
 
+0.4.8-整理（代码整理：拆分超长文件 + 补注释 + 加代码地图）:
+
+整理：把 8 个超过 500 行的文件按「职责」拆开，行为保持不变
+	core/net/session.py（828）	→ session.py + member.py + session_const.py
+					+ session_reliable.py + session_messaging.py
+					+ session_game.py
+	games/guandan/views/play_view.py（1681）
+					→ play_view.py + play_const.py + play_table.py
+					+ play_actions.py + play_ai.py + play_net.py
+					+ play_flow.py
+	games/chess/views.py（663）	→ views.py + views_board.py + views_sync.py
+					+ views_record.py
+	games/guandan/selftest.py（616）→ selftest.py + selftest_common.py
+					+ selftest_cards.py + selftest_engine.py
+					+ selftest_tribute.py
+	games/guandan/engine.py（605）→ engine.py（门面）+ state.py + hand.py
+					+ settle.py + serialize.py
+	games/guandan/rules.py（593）	→ rules.py + rules_base.py + rules_parse.py
+					+ rules_compare.py
+	core/views/room_view.py（554）→ room_view.py + room_widgets.py
+	games/guandan/views/simulator_view.py（546）
+					→ simulator_view.py + sim_session.py + sim_const.py
+	（另外 board_view.py 也拆出了 board_widgets.py）
+	拆分原则：纯逻辑按「数据结构 / 识别 / 比较 / 枚举 / 状态机 /
+		结算 / 序列化」分；界面按「常量 / 画面 / 交互 / 后台任务 /
+		网络 / 流转」分；类太长时用 mixin 组合，方法一行不改地搬
+		过去，行为完全一致
+	兼容：所有对外导入写法不变（from .engine import Hand、
+		from games.guandan.rules import parse、
+		from core.net.session import RoomSession 等照旧可用）
+补注释：每个文件加了中文 module docstring；每个函数 / 方法加了
+	「它负责什么」的 docstring；成块代码前加了
+	「# ---------- 小节标题 ----------」分节标题
+新文件：CODE_INDEX.md —— 逐文件作用说明与分类（代码地图），
+	README.txt 第 8 节已指向它
+顺手修：core/ui_common.py 里 menu_card 有两份定义（后者把前者覆
+	盖了）→ 删掉被覆盖的那份，现行外观保持不变并留注释说明；
+	games/chess/engine.py、games/*/history_view.py 补上缺失的
+	Any/Dict/ft 导入；掼蛋联机进贡分支补上漏掉的 card_from_json
+	导入；清掉全项目「导入但没用」的 import
+验证：掼蛋自检（python -m games.guandan.selftest）、联机自检
+	（python -m core.net.selftest）、象棋自检全部通过；两间房
+	联机实测（发牌同步 / 身份判定 / 降级兜底）通过
+
 0.4.8（国际象棋：从占位到可玩 + 房间联网对弈 + 历史记录）:
 
 Bug（多人实测，掼蛋）：**房主出牌，客人的牌桌纹丝不动**；

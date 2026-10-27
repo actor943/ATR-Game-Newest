@@ -61,6 +61,8 @@ class RusticPack(BasePack):
     """石砖风：凸/凹全靠四边分色，图标用 emoji（剑、火把、砖块）。"""
 
     def __init__(self) -> None:
+
+        """准备石砖风自己的颜色与字体。"""
         super().__init__(
             meta=PackMeta(
                 id="rustic",
@@ -75,11 +77,15 @@ class RusticPack(BasePack):
     # ---------------- 颜色 ----------------
 
     def tone(self, name: str) -> str:
+
+        """取某种语气（gold / dim / danger）的颜色。"""
         return TONE_MAP.get(name, RUNE)
 
     # ---------------- 文字 / 装饰 ----------------
 
     def title(self, value: str, size: int = 20) -> ft.Control:
+
+        """带火把纹样的标题。"""
         line = ft.Container(height=1, bgcolor=GOLD_DARK, expand=True)
         return ft.Column(
             [
@@ -94,6 +100,8 @@ class RusticPack(BasePack):
         )
 
     def divider(self) -> ft.Control:
+
+        """石砖风的分隔线。"""
         line = ft.Container(height=1, bgcolor=GOLD_DARK, expand=True)
         return ft.Container(
             padding=ft.Padding.symmetric(vertical=10),
@@ -103,6 +111,8 @@ class RusticPack(BasePack):
         )
 
     def pill(self, value: str, *, tone: str = "gold") -> ft.Control:
+
+        """圆角小标签。"""
         bg = self.tone(tone)
         return ft.Container(
             content=self.text(value, 11, "on_primary", ft.FontWeight.BOLD, 1.0),
@@ -125,6 +135,8 @@ class RusticPack(BasePack):
     def panel(self, content: ft.Control, *, padding: int = 12,
               expand: Optional[bool] = None,
               bgcolor: Optional[str] = None) -> ft.Control:
+
+        """带斜角的面板。"""
         return ft.Container(
             content=content,
             padding=ft.Padding.all(padding),
@@ -135,6 +147,8 @@ class RusticPack(BasePack):
 
     def scroll_box(self, content: ft.Control, *, height: Optional[int] = None,
                    expand: bool = False) -> ft.Control:
+
+        """固定高度、可滚动的区域。"""
         inner = ft.Column([content], spacing=0, scroll=ft.ScrollMode.AUTO,
                           auto_scroll=True, expand=expand)
         body = ft.Container(content=inner, height=height) if height else inner
@@ -149,6 +163,8 @@ class RusticPack(BasePack):
                on_click: Optional[Callable] = None, *, primary: bool = True,
                enabled: bool = True, width: Optional[int] = None,
                height: int = 44) -> ft.Control:
+
+        """石砖风按钮。"""
         bg = STONE_LIGHT if primary else STONE
         fg = GOLD_LIGHT if (primary and enabled) else RUNE_DIM
         kids: List[ft.Control] = []
@@ -178,11 +194,15 @@ class RusticPack(BasePack):
 
     def icon_button(self, icon: str, on_click: Optional[Callable] = None,
                     *, tooltip: str = "") -> ft.Control:
+
+        """只有图标的小按钮。"""
         return ft.IconButton(icon=icon, icon_color=GOLD_LIGHT,
                              on_click=on_click, tooltip=tooltip)
 
     def chip(self, label: str, *, active: bool,
              on_click: Optional[Callable] = None) -> ft.Control:
+
+        """胶囊标签。"""
         return ft.Container(
             content=self.text(label, 12, "gold" if active else "dim",
                               ft.FontWeight.BOLD),
@@ -198,6 +218,7 @@ class RusticPack(BasePack):
               ref: Optional[ft.Ref] = None) -> ft.Control:
         # 输入框本身**不 expand**：在 Column 里 expand 会把它拉高，
         # 页面就多出一块来历不明的空白（0.4.7 修掉的诡异窗口之一）
+        """一行「标签 + 输入框」。"""
         return ft.Column(
             [
                 self.text(label, 11, "dim", spacing=1.0),
@@ -221,6 +242,8 @@ class RusticPack(BasePack):
     def card(self, title: str, description: str, icon: str,
              on_click: Optional[Callable] = None, *, available: bool = True,
              width: Optional[int] = None) -> ft.Control:
+
+        """主菜单 / 子菜单上的大卡片。"""
         return ft.Container(
             width=width or 300,
             bgcolor=STONE_PANEL, border=self.bevel(), border_radius=2,
@@ -256,6 +279,8 @@ class RusticPack(BasePack):
 
     def bar(self, title_text: str, on_back: Optional[Callable] = None,
             actions: Optional[List[ft.Control]] = None) -> ft.Control:
+
+        """页面顶栏。"""
         left: List[ft.Control] = []
         if on_back is not None:
             left.append(self.icon_button(ft.Icons.ARROW_BACK, on_back,
@@ -277,6 +302,8 @@ class RusticPack(BasePack):
     def page(self, title_text: str, content: ft.Control,
              on_back: Optional[Callable] = None,
              actions: Optional[List[ft.Control]] = None) -> ft.Control:
+
+        """整页骨架：顶栏 + 内容。"""
         return ft.Column(
             [
                 self.bar(title_text, on_back, actions),
@@ -287,12 +314,16 @@ class RusticPack(BasePack):
         )
 
     def wrap(self, control: ft.Control) -> ft.Control:
+
+        """把控件套进石砖风底色里。"""
         return ft.Container(content=control, bgcolor=STONE, expand=True)
 
     # ---------------- 联机专用件 ----------------
 
     def slot(self, label: str = "空位", *, on_click=None,
              width: int = 150, height: int = 76) -> ft.Control:
+
+        """房间里的空位。"""
         return ft.Container(
             content=ft.Column(
                 [ft.Text("✚", size=16, color=RUNE_DIM),
@@ -309,6 +340,8 @@ class RusticPack(BasePack):
     def taken_slot(self, nick: str, *, host: bool = False,
                    talking: bool = False, muted: bool = False,
                    width: int = 150, height: int = 76) -> ft.Control:
+
+        """房间里已坐人的位子。"""
         border_color = GOLD if talking else (GOLD_DARK if not muted
                                              else "#4A3A2A")
         mic = "🔇" if muted else ("🗣" if talking else "🎤")
@@ -334,6 +367,8 @@ class RusticPack(BasePack):
 
     def chat_row(self, nick: str, text: str, *, own: bool = False,
                  system: bool = False) -> ft.Control:
+
+        """聊天区的一行。"""
         if system:
             return ft.Container(
                 padding=ft.Padding.symmetric(vertical=3),
@@ -350,6 +385,8 @@ class RusticPack(BasePack):
         )
 
     def level_bar(self, level: float, width: int = 90) -> ft.Control:
+
+        """麦克风电平条。"""
         blocks = 10
         lit = int(max(0.0, min(1.0, level)) * blocks)
         kids = [

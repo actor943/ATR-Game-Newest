@@ -52,6 +52,7 @@ def _goto(navigate: NavigateFn, path: str) -> None:
 
 
 def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
+    """多人联机页：创建房间 / 搜索房间 两个模式。"""
     state: Dict[str, object] = {
         "tab": "create",
         "profile": Profile.load(),
@@ -78,7 +79,9 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     # （0.4.7 之前「看不到建立房间按钮」就是这么来的）。
     form_area = ft.Column(spacing=0)
 
+    # ---------- 页面状态 ----------
     def stop_scan() -> None:
+        """停止局域网扫描（离开页面时必须调用，否则后台还在扫）。"""
         scanner: Optional[RoomScanner] = state["scanner"]  # type: ignore[assignment]
         if scanner is not None:
             scanner.stop()
@@ -86,6 +89,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         state["rooms"] = []
 
     def render_create(_e=None) -> None:
+        """切到「创建房间」界面。"""
         stop_scan()
         state["tab"] = "create"
         tab_title.value = t("mp.tab_create")
@@ -93,6 +97,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         _fill_form_area()
 
     def render_search(_e=None) -> None:
+        """切到「搜索房间」界面。"""
         state["tab"] = "search"
         tab_title.value = t("mp.tab_search")
         tab_title.color = ui.tone("primary")
@@ -114,22 +119,27 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     seat_pick = _default_seats(game_pick)
 
     def _set_game(value: str) -> None:
+        """选定要玩哪个游戏。"""
         nonlocal game_pick, seat_pick
         game_pick = value
         seat_pick = _default_seats(value)   # 换游戏顺手把席位数调到合适的默认
         _fill_form_area()
 
     def _set_seats(value: str) -> None:
+        """选定房间人数。"""
         nonlocal seat_pick
         seat_pick = value
         _fill_form_area()
 
     def roll_code(_e=None) -> None:
+        """重新生成一个房间码。"""
         if code_ref.current is not None:
             code_ref.current.value = random_code()
             page.update()
 
+    # ---------- 创建房间 ----------
     def do_create(_e=None) -> None:
+        """真的建房间：申请端口、登记房间、显示房间码。"""
         if state.get("busy"):
             return                      # 防止网络慢时狂点导致重复开房
         name = (name_ref.current.value if name_ref.current else "").strip()
@@ -175,7 +185,9 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     # ---------------- 搜索房间 ----------------
 
+    # ---------- 搜索与加入 ----------
     def _room_row(info: RoomInfo) -> ft.Control:
+        """扫描结果里的一行（房间名 + 码 + 加入按钮）。"""
         full = info.started or info.taken >= info.seats
         return ui.panel(
             ft.Row(
@@ -210,6 +222,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         err = ui.hint("")
 
         def confirm(_e=None) -> None:
+            """输入的码对不对 → 校验后加入。"""
             code = normalize_code(code_box.value or "")
             if len(code) < 4:
                 err.value = t("mp.code_too_short")
@@ -252,6 +265,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         )
 
     def _do_join(info: RoomInfo, code: str) -> None:
+        """加入房间：握手、拿席位、进房间页。"""
         tip.value = t("mp.joining", name=info.name)
         tip.color = ui.tone("primary")
         page.update()
@@ -287,7 +301,9 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     # ---------------- 扫描循环 ----------------
 
+    # ---------- 扫描循环 ----------
     def _start_scan() -> None:
+        """开始扫描局域网里的房间。"""
         scanner: Optional[RoomScanner] = state["scanner"]  # type: ignore[assignment]
         if scanner is None:
             scanner = RoomScanner()
@@ -310,8 +326,10 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     # ---------------- 画面拼装 ----------------
 
+    # ---------- 画面拼装 ----------
     def _create_body() -> List[ft.Control]:
         # 卡名走 .label：游戏插件登记了 title_key 就会跟着语言变
+        """创建房间那一半的控件。"""
         game_options = [(g.id, g.label) for g in games] \
             or [("", t("mp.no_games"))]
         return [
@@ -385,6 +403,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         ]
 
     def _search_body() -> List[ft.Control]:
+        """搜索房间那一半的控件。"""
         rooms: List[RoomInfo] = state["rooms"]       # type: ignore[assignment]
         if not rooms:
             return [
@@ -405,6 +424,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     def _fill_form_area() -> None:
         # 只包一层面板：以前 _create_body 自带 panel、这里又包一层，
         # 双层边框 + 外层 expand 把内容顶飞，就是「没有底的诡异窗口」
+        """把当前模式的控件填进表单区。"""
         body = _create_body() if state["tab"] == "create" else _search_body()
         form_area.controls = body
         try:
@@ -415,6 +435,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     # ---------------- 页面骨架 ----------------
 
     def on_back(_e=None) -> None:
+        """返回主菜单。"""
         state["tab"] = "left"        # 让扫描协程自然收摊，别在后台空转
         stop_scan()
         navigate("/")

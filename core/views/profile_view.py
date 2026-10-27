@@ -19,6 +19,8 @@ from core.registry import NavigateFn
 
 
 def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
+
+    """个人资料页：查看昵称与设备号，可改名、可随机生成。"""
     profile = Profile.load()
     had_nick = profile.named
     nick = profile.ensure_nick()          # 没起过就先随机一个，保证有名字可用

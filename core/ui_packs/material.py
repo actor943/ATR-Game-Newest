@@ -45,6 +45,8 @@ class MaterialPack(BasePack):
     """默认包：用 flet 原生控件拼，圆角 + 轻描边。"""
 
     def __init__(self) -> None:
+
+        """准备两套配色（明 / 暗），并记住当前用哪套。"""
         dark = theme.mode() == "dark"
         super().__init__(
             meta=PackMeta(
@@ -59,14 +61,20 @@ class MaterialPack(BasePack):
 
     # 明暗切换后要重新取一次令牌
     def resync(self) -> None:
+
+        """重新读一遍明暗开关，把颜色令牌换成对应的。"""
         self.colors = _tokens(theme.mode() == "dark")
 
     # ---------------- 文字 / 装饰 ----------------
 
     def title(self, value: str, size: int = 20) -> ft.Control:
+
+        """标题文字。"""
         return self.text(value, size, "text", ft.FontWeight.BOLD)
 
     def divider(self) -> ft.Control:
+
+        """一条细分隔线。"""
         return ft.Divider(height=1, color=self.colors.divider)
 
     # ---------------- 容器 ----------------
@@ -74,6 +82,8 @@ class MaterialPack(BasePack):
     def panel(self, content: ft.Control, *, padding: int = 12,
               expand: Optional[bool] = None,
               bgcolor: Optional[str] = None) -> ft.Control:
+
+        """带底色和圆角的面板。"""
         return ft.Container(
             content=content,
             padding=ft.Padding.all(padding),
@@ -85,6 +95,8 @@ class MaterialPack(BasePack):
 
     def scroll_box(self, content: ft.Control, *, height: Optional[int] = None,
                    expand: bool = False) -> ft.Control:
+
+        """固定高度、可以滚动的区域。"""
         inner = ft.Column([content], spacing=0, scroll=ft.ScrollMode.AUTO,
                           auto_scroll=True, expand=expand)
         body = ft.Container(content=inner, height=height) if height else inner
@@ -103,6 +115,8 @@ class MaterialPack(BasePack):
                on_click: Optional[Callable] = None, *, primary: bool = True,
                enabled: bool = True, width: Optional[int] = None,
                height: int = 44) -> ft.Control:
+
+        """主按钮。"""
         label = f"{icon}  {text}" if icon else text
         return ft.Button(
             content=ft.Text(label, size=14),
@@ -115,11 +129,15 @@ class MaterialPack(BasePack):
 
     def icon_button(self, icon: str, on_click: Optional[Callable] = None,
                     *, tooltip: str = "") -> ft.Control:
+
+        """只有图标的小按钮。"""
         return ft.IconButton(icon=icon, icon_color=self.colors.text,
                              on_click=on_click, tooltip=tooltip)
 
     def chip(self, label: str, *, active: bool,
              on_click: Optional[Callable] = None) -> ft.Control:
+
+        """胶囊标签（可高亮，表示「选中」）。"""
         return ft.Container(
             content=self.text(label, 12, "on_primary" if active else "dim",
                               ft.FontWeight.BOLD),
@@ -135,6 +153,8 @@ class MaterialPack(BasePack):
               on_submit: Optional[Callable] = None, expand: bool = True,
               max_length: Optional[int] = None,
               ref: Optional[ft.Ref] = None) -> ft.Control:
+
+        """一行「标签 + 输入框」。"""
         return ft.Column(
             [
                 self.text(label, 11, "dim"),
@@ -157,6 +177,7 @@ class MaterialPack(BasePack):
              on_click: Optional[Callable] = None, *, available: bool = True,
              width: Optional[int] = None) -> ft.Control:
         # opacity 只在不可用时给值：传 None 会被 flet 拒绝
+        """主菜单 / 子菜单上的大卡片。"""
         dim = {} if available else {"opacity": 0.55}
         return ft.Container(
             width=width or 300,
@@ -192,6 +213,8 @@ class MaterialPack(BasePack):
 
     def bar(self, title_text: str, on_back: Optional[Callable] = None,
             actions: Optional[List[ft.Control]] = None) -> ft.Control:
+
+        """页面顶栏：左侧返回 + 中间标题 + 右侧动作区。"""
         left: List[ft.Control] = []
         if on_back is not None:
             left.append(ft.IconButton(icon=ft.Icons.ARROW_BACK,
@@ -213,6 +236,8 @@ class MaterialPack(BasePack):
     def page(self, title_text: str, content: ft.Control,
              on_back: Optional[Callable] = None,
              actions: Optional[List[ft.Control]] = None) -> ft.Control:
+
+        """整页骨架：顶栏 + 内容。"""
         return ft.Column(
             [
                 self.bar(title_text, on_back, actions),
@@ -223,6 +248,8 @@ class MaterialPack(BasePack):
         )
 
     def wrap(self, control: ft.Control) -> ft.Control:
+
+        """把控件套进当前界面的统一底色里。"""
         return ft.Container(content=control, bgcolor=self.colors.bg,
                             expand=True)
 
@@ -230,6 +257,8 @@ class MaterialPack(BasePack):
 
     def slot(self, label: str = "空位", *, on_click=None,
              width: int = 150, height: int = 76) -> ft.Control:
+
+        """房间里的空位。"""
         return ft.Container(
             content=ft.Column(
                 [ft.Text("＋", size=15, color=self.colors.text_muted),
@@ -246,6 +275,8 @@ class MaterialPack(BasePack):
     def taken_slot(self, nick: str, *, host: bool = False,
                    talking: bool = False, muted: bool = False,
                    width: int = 150, height: int = 76) -> ft.Control:
+
+        """房间里已坐人的位子（房主 / 正在说话 / 已静音都有区别）。"""
         mic = "🔇" if muted else ("🗣" if talking else "🎤")
         return ft.Container(
             content=ft.Column(
@@ -266,6 +297,8 @@ class MaterialPack(BasePack):
 
     def chat_row(self, nick: str, text: str, *, own: bool = False,
                  system: bool = False) -> ft.Control:
+
+        """聊天区的一行。"""
         if system:
             return ft.Container(
                 padding=ft.Padding.symmetric(vertical=3),
@@ -282,6 +315,8 @@ class MaterialPack(BasePack):
         )
 
     def level_bar(self, level: float, width: int = 90) -> ft.Control:
+
+        """麦克风电平条。"""
         blocks = 10
         lit = int(max(0.0, min(1.0, level)) * blocks)
         kids = [

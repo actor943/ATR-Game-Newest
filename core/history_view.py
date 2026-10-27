@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List
 
 import flet as ft
 
@@ -75,6 +75,8 @@ class HistoryPage:
                  summary_fn: Callable[[Path, Dict[str, str]], str],
                  list_height: int = LIST_HEIGHT,
                  max_files: int = MAX_FILES):
+
+        """准备页面状态（记录列表、当前选中项）。"""
         self.page = page
         self.navigate = navigate
         self.game_id = game_id
@@ -100,6 +102,8 @@ class HistoryPage:
     # ---------------- 界面 ----------------
 
     def build(self) -> ft.Control:
+
+        """拼出整个历史记录页。"""
         self._reload()
 
         detail_box = ft.Container(
@@ -205,6 +209,8 @@ class HistoryPage:
         self._update()
 
     def _rebuild_list(self):
+
+        """重画左边的列表。"""
         self.list_col.controls = [
             self._list_item(i, p) for i, p in enumerate(self.files)
         ] or [
@@ -212,6 +218,8 @@ class HistoryPage:
         ]
 
     def _list_item(self, i: int, path: Path) -> ft.Control:
+
+        """列表里的一项（文件名 + 时间）。"""
         meta, _body = _split_meta(_read_file(path))
         selected = (i == self.index)
         return ft.Container(
@@ -237,6 +245,8 @@ class HistoryPage:
         )
 
     def _select(self, i: int):
+
+        """选中某一条记录并显示详情。"""
         if not (0 <= i < len(self.files)):
             return
         self.index = i
@@ -256,6 +266,8 @@ class HistoryPage:
             self._update()
 
     def _update(self):
+
+        """把当前状态刷到界面上。"""
         self.page.update()
 
 

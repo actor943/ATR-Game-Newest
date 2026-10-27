@@ -37,7 +37,9 @@ jobs:
       #   若这里装 0.85.3，bundle 里的运行时与 Flutter 客户端版本不匹配，
       #   运行起来就是「白屏、无响应、窗口模式也不生效」。
       #   注意：决定「打包进 .app 的运行时版本」的是 pyproject.toml 的
-      #   project.dependencies，不是这里；这里只决定构建用的 Flutter 客户端。
+      #   project.dependencies（+ 各平台表 tool.flet.<平台>.dependencies，
+      #   语音库 numpy / sounddevice 就在那里，只进桌面包），不是这里；
+      #   这里只决定构建用的 Flutter 客户端。
       #   所以版本号要与 pyproject.toml / requirements.txt 三处对齐，
       #   千万别只改 workflow 这一处。
       - name: Install dependencies
@@ -48,6 +50,26 @@ jobs:
 
       - name: Build ${{ matrix.target }}
         run: flet build ${{ matrix.target }} --yes --no-rich-output
+      # 0.4.8 实测事故的回归护栏：语音库（numpy / sounddevice）曾经只写在
+      # requirements.txt 里，而那个文件**不进安装包** —— 结果源码运行能开麦、
+      # 分发版提示「没有语音库」。flet build 装进 bundle 的只有 pyproject.toml 的
+      # project.dependencies + tool.flet.<平台>.dependencies。
+      # 桌面包（windows / macos）构建完成后这里直接翻产物，确认语音库真的在包里；
+      # apk 故意不查（Android 没有 sounddevice 的 wheel，也不该装）。
+      - name: 桌面包必须含语音库（防再次漏依赖）
+        if: matrix.target == 'macos' || matrix.target == 'windows'
+        shell: bash
+        run: |
+          hit=$(find "build/${{ matrix.target }}" \
+                  \( -iname 'sounddevice*' -o -iname 'numpy' \) \
+                  2>/dev/null | head -3)
+          if [ -z "$hit" ]; then
+            echo "::error::分发包里找不到 sounddevice/numpy。语音依赖要写在 pyproject.toml 的 [tool.flet.${{ matrix.target }}.dependencies]（requirements.txt 不进 bundle，只影响开发环境）。"
+            exit 1
+          fi
+          echo "语音库已在包内："
+          echo "$hit"
+
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

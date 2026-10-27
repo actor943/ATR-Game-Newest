@@ -2,9 +2,15 @@
 """掼蛋快速记牌视图。
 
 由 0.3 整段 main() 函数迁移而来，逻辑等价：
+
 * 先选择出牌人（我 / 下家 / 对家 / 上家）
 * 点击牌面记录该家出的牌，再次点击可撤销
 * 后台按四家视角计算三家对手的炸弹概率
+
+模块划分
+--------
+* :mod:`games.guandan.views.board_widgets` —— 牌面按钮组件（普通牌 / 王）
+* 本文件 —— 页面本身（选人、选级牌、点牌、算概率）
 """
 
 from __future__ import annotations
@@ -24,137 +30,7 @@ from ..analyzer import (
     TOTAL_PER_RANK,
     GdAnalyzer,
 )
-
-SUIT_NAMES = {"♠": "黑桃", "♥": "红心", "♣": "梅花", "♦": "方片"}
-SUIT_COLORS = {"♠": "#333333", "♥": "#E53935", "♣": "#2E7D32", "♦": "#E53935"}
-
-
-# ============================================================
-# 牌面组件
-# ============================================================
-
-class CardButton(ft.Container):
-    """单张牌按钮（同一花色点数有两张，用 copy_index 区分）"""
-
-    def __init__(self, rank: str, suit: str, copy_index: int,
-                 on_toggle, played: bool = False, is_wild: bool = False):
-        self.rank = rank
-        self.suit = suit
-        self.copy_index = copy_index
-        self._on_toggle = on_toggle
-        self._played = played
-        self._is_wild = is_wild
-
-        color = SUIT_COLORS[suit]
-        bg = self._get_bg(played, is_wild)
-
-        self.top_text = ft.Text(
-            suit if played else rank,
-            size=14 if played else 13,
-            color=color,
-            weight=ft.FontWeight.BOLD,
-        )
-        bottom_label = "赖子" if is_wild else SUIT_NAMES[suit]
-        self.suit_label = ft.Text(
-            bottom_label, size=8,
-            color="#D4A017" if is_wild else color,
-        )
-
-        border_color = "#D4A017" if is_wild else color
-        super().__init__(
-            width=T.CARD_W, height=T.CARD_H,
-            bgcolor=bg,
-            border=ft.Border.all(1.5 if not is_wild else 2, color=border_color),
-            border_radius=6,
-            alignment=ft.alignment.Alignment.CENTER,
-            animate=ft.Animation(200, ft.AnimationCurve.EASE_OUT),
-            on_click=self._handle_click,
-            content=ft.Column(
-                [self.top_text, self.suit_label],
-                spacing=0,
-                alignment=ft.MainAxisAlignment.CENTER,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-        )
-
-    def _get_bg(self, played: bool, is_wild: bool) -> str:
-        if is_wild:
-            return T.CARD_PLAYED if played else T.WILD_BG
-        return T.CARD_PLAYED if played else T.CARD_BG
-
-    @property
-    def played(self):
-        return self._played
-
-    @property
-    def is_wild(self):
-        return self._is_wild
-
-    def _handle_click(self, e):
-        self._on_toggle(self)
-
-    def update_state(self, played: bool):
-        self._played = played
-        color = SUIT_COLORS[self.suit]
-        self.bgcolor = self._get_bg(played, self._is_wild)
-        self.top_text.value = self.suit if played else self.rank
-        self.top_text.color = color
-        bottom_label = "赖子" if self._is_wild else SUIT_NAMES[self.suit]
-        self.suit_label.value = bottom_label
-        self.suit_label.color = "#D4A017" if self._is_wild else color
-        border_color = "#D4A017" if self._is_wild else color
-        self.border = ft.Border.all(
-            1.5 if not self._is_wild else 2, color=border_color)
-
-    def set_wild(self, is_wild: bool):
-        if self._is_wild == is_wild:
-            return
-        self._is_wild = is_wild
-        self.update_state(self._played)
-
-
-class JokerButton(ft.Container):
-    """王牌按钮"""
-
-    def __init__(self, name: str, copy_index: int, on_toggle,
-                 played: bool = False):
-        self.name = name
-        self.copy_index = copy_index
-        self._on_toggle = on_toggle
-        self._played = played
-
-        self.label = ft.Text(
-            name, size=13, weight=ft.FontWeight.BOLD,
-            color=T.JOKER_TEXT if not played else T.JOKER_TEXT_PLAYED,
-        )
-        super().__init__(
-            width=T.JOKER_W, height=T.JOKER_H,
-            bgcolor=T.CARD_PLAYED if played else T.JOKER_BG,
-            border=ft.Border.all(2, color=T.JOKER_BORDER_BIG if name == "大王"
-                                        else T.JOKER_BORDER_SMALL),
-            border_radius=8,
-            alignment=ft.alignment.Alignment.CENTER,
-            animate=ft.Animation(200, ft.AnimationCurve.EASE_OUT),
-            on_click=self._handle_click,
-            content=self.label,
-        )
-
-    @property
-    def played(self):
-        return self._played
-
-    def _handle_click(self, e):
-        self._on_toggle(self)
-
-    def update_state(self, played: bool):
-        self._played = played
-        self.bgcolor = T.CARD_PLAYED if played else T.JOKER_BG
-        self.label.color = T.JOKER_TEXT_PLAYED if played else T.JOKER_TEXT
-
-
-# ============================================================
-# 视图构建
-# ============================================================
+from .board_widgets import SUIT_COLORS, SUIT_NAMES, CardButton, JokerButton
 
 def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     """快速记牌视图构建器。每次调用返回一个新的闭包，状态随闭包保留。"""
@@ -182,7 +58,10 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     bomb_text = ft.Text("", size=12, color=T.TEXT_PRIMARY)
     threat_text = ft.Text("", size=12, color=T.TEXT_SECONDARY, italic=True)
 
+    # ---------- 页面状态与刷新 ----------
     def refresh_status():
+
+        """刷新顶部状态文字（当前玩家 / 级牌 / 剩余张数）。"""
         rem = analyzer.remaining_cards()
         remaining_text.value = f"剩余: {rem} / {TOTAL_CARDS} 张"
         remaining_text.color = (
@@ -220,6 +99,8 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         page.update()
 
     def refresh_level_ui():
+
+        """刷新级牌选择区（可选 2~A）。"""
         level = analyzer.level_rank
         for rank, btn in level_btns.items():
             is_active = (level == rank)
@@ -233,6 +114,8 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         refresh_status()
 
     def refresh_all():
+
+        """状态 + 级牌区一起刷新。"""
         for (rank, suit, ci), btn in card_buttons.items():
             btn.update_state(analyzer.is_played(rank, suit, ci))
         for btn in joker_buttons:
@@ -242,6 +125,8 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         refresh_level_ui()
 
     def select_player(idx: int):
+
+        """切换当前查看的玩家。"""
         nonlocal current_player
         current_player = idx
         refresh_status()
@@ -275,6 +160,8 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     # ======== 级牌 ========
     def on_set_level(rank: str):
+
+        """设置当前级牌点数。"""
         if analyzer.level_rank == rank:
             analyzer.set_level_rank(None)
         else:
@@ -283,10 +170,14 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     # ======== 顶部操作 ========
     def on_undo(_e):
+
+        """撤销上一步标记。"""
         analyzer.undo_last()
         refresh_all()
 
     def on_reset(_e):
+
+        """清空当前玩家的全部标记。"""
         analyzer.reset()
         refresh_all()
 
@@ -307,14 +198,21 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     card_grid = ft.Column(spacing=4, scroll=ft.ScrollMode.AUTO, expand=True)
 
     def on_card_toggle(btn: CardButton):
+
+        """普通牌被点了 → 转发给内部处理。"""
         analyzer.toggle_card(current_player, btn.rank, btn.suit, btn.copy_index)
         refresh_all()
 
     def on_joker_toggle(btn: JokerButton):
+
+        """王牌被点了 → 转发给内部处理。"""
         analyzer.toggle_joker(current_player, btn.name, btn.copy_index)
         refresh_all()
 
+    # ---------- 牌面排布 ----------
     def build_cards():
+
+        """按当前级牌把 108 张牌排好并生成按钮。"""
         card_grid.controls.clear()
         card_buttons.clear()
         joker_buttons.clear()
@@ -459,6 +357,8 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     )
 
     def go_back(_e):
+
+        """返回掼蛋子菜单。"""
         navigate("/g/guandan")
 
     return ft.Column(

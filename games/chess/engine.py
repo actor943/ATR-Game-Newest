@@ -19,8 +19,7 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # 类型别名
 Square = Tuple[int, int]          # (row, col)
@@ -437,9 +436,7 @@ class ChessGame:
         return None, None
 
     def _is_attacked(self, board, r: int, c: int, by: str) -> bool:
-        # 兵：by 方兵攻击 (r, c) 的方向（兵的吃子方向与其前进方向相反）
-        pdr = 1 if by == "w" else -1  # 白兵在下方、向上吃，故攻击 (r-1)… 见下
-        # 白兵从 (r+1) 斜上吃至 (r,c) ；黑兵从 (r-1) 斜下吃至 (r,c)
+        # 兵：白兵在下方、向上吃，故攻击 (r-1, c±1)；黑兵反之
         for dc in (-1, 1):
             rr = r + (1 if by == "w" else -1)
             cc = c + dc
