@@ -932,6 +932,10 @@ class _Play:
         # 联机：把这一步告诉房主（房主应用后重推快照给所有人）
         self._notify_host({"k": "mv", "p": me,
                            "c": cards_to_json(sorted(combo.cards, key=str))})
+        # 房主自己出的牌**也**要广播出去（0.4.8-fix）：以前这一路只在
+        # 「自己是客人」时才有内容，房主出牌 / 过牌 / 进贡全都没人知道 ——
+        # 客人的牌桌一直停在发牌那一刻，看着就像两边手牌一样、也不更新。
+        self._publish_if_host()
 
     def _on_pass(self, _e):
         me = self.cfg.local_seat
@@ -956,6 +960,9 @@ class _Play:
         self.hint_text.color = T.TEXT_MUTED
         self._log(f"{NAMES[me]} 过", MUTED)
         self._after_action()
+        # 联机：告诉房主（房主应用后重推快照）；房主自己则直接推快照
+        self._notify_host({"k": "pass", "p": me})
+        self._publish_if_host()
 
     # ============================================================
     # 进贡
@@ -1113,6 +1120,8 @@ class _Play:
         self._start_ai()
         # 联机：把这次进贡 / 还贡的选择告诉房主
         self._notify_host({"k": "tribute", "card": card_to_json(card)})
+        # 房主自己选的贡牌也要广播（0.4.8-fix，同出牌）
+        self._publish_if_host()
 
     def _tribute_after_step(self, tr):
         """进贡走完：真正换牌、把事件写进日志，并记下进贡得来的牌。"""
@@ -1221,12 +1230,16 @@ class _Play:
         """
         members = self.net.roster()
         by_seat = {m.seat: m for m in members if m.seat >= 0}
+        # 我坐哪一号：以席位表里**我自己那条**为准（self.net.me.seat 是本地
+        # 缓存，可能还没同步到；拿不到就宁可当旁观者，也别猜 0 号座 ——
+        # 猜错就会把别人的手牌当成自己的显示出来）。
+        mine = next((m for m in members if m.mid == self.net.me.mid), None)
+        my_room_seat = mine.seat if mine is not None else self.net.me.seat
         seats = list(self.cfg.seats)
         for i in range(4):
             seats[i] = SEAT_HUMAN if i in by_seat else SEAT_AI
         if all(s == SEAT_AI for s in seats):        # 兜底：不能全电脑
             seats[0] = SEAT_HUMAN
-        my_room_seat = self.net.me.seat
         if 0 <= my_room_seat < 4:
             self.my_seat = my_room_seat
             self.spectator = False
@@ -1274,6 +1287,16 @@ class _Play:
         """客人：把本地这一步动作单播给房主（房主应用后重推快照）。"""
         if self.net is not None and not self.is_host:
             self.net.send_game_to_host(data)
+
+    def _publish_if_host(self) -> None:
+        """房主：自己动手之后把新快照推给所有人。
+
+        0.4.8-fix：以前只有「客人」这一路会把动作告诉房主，房主自己的出牌 /
+        过牌 / 进贡**从不广播** —— 客人的牌桌就停在发牌那一刻不动
+        （看着像两边手牌一样，其实是一边根本没收到任何后续）。
+        """
+        if self.net is not None and self.is_host:
+            self._push_state()
 
     def _detach_net(self) -> None:
         """离开牌桌：摘掉网络回调，别让旧实例继续收玩法消息。"""

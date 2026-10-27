@@ -108,6 +108,7 @@ class RoomSession:
         self._tick: Optional[threading.Thread] = None
         self._stop = threading.Event()
         self._pending: Dict[str, Dict[str, Any]] = {}   # mid -> 待确认消息
+        self._seen_seq: set = set()   # 已处理过的可靠消息序号（去重）
         self._last_roster = 0.0
         self._last_ping = 0.0
         self._lock = threading.RLock()
@@ -463,6 +464,17 @@ class RoomSession:
             kind = str(msg.get("t", ""))
             if msg.get("need_ack"):
                 self._ack(str(msg.get("mid_seq", "")), addr)
+            # 去重：可靠消息（need_ack）没收到 ACK 会被重传，同一个 mid_seq
+            # 只处理一次 —— 否则「开始」重传会让房间页重复跳一次对局页，
+            # 把客人正在看的那张牌桌顶掉。
+            mid_seq = str(msg.get("mid_seq", "") or "")
+            if mid_seq:
+                with self._lock:
+                    if mid_seq in self._seen_seq:
+                        continue
+                    self._seen_seq.add(mid_seq)
+                    if len(self._seen_seq) > 512:
+                        self._seen_seq = set(list(self._seen_seq)[-256:])
             if kind == ACK:
                 seq = str(msg.get("ack", ""))
                 with self._lock:

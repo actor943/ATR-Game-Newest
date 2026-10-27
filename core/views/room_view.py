@@ -48,6 +48,12 @@ GAME_ROOM_ROUTE = {
     "chess": "/g/chess/play",
 }
 
+# 一个房间同一时刻只允许一个轮询协程在跑（key = id(会话)）。
+# 房间视图会被路由器缓存复用；从对局页退回房间时 build() 不再执行，
+# 旧实例的轮询若还活着，新旧两个轮询就会抢同一个事件队列 ——
+# 谁抢到「开始」谁就跳转，可见的那个房间就收不到响应。
+_POLL_OWNER: dict = {}
+
 
 def _enter_game_route(navigate: NavigateFn, route: str) -> None:
     """进对局页前先丢掉路由缓存。
@@ -102,6 +108,8 @@ class _Lobby:
 
         if not self._polling:
             self._polling = True
+            # 认领这个房间的轮询权（旧的房间视图若还在跑，让它自己收摊）
+            _POLL_OWNER[id(session)] = self
             self.page.run_task(self._poll)
 
         body = ft.Column(
@@ -377,6 +385,8 @@ class _Lobby:
     def _on_leave(self, _e=None) -> None:
         """离开房间：广播一声 bye，停掉语音与所有线程。"""
         self.system(t("room.leave"))
+        if self.session is not None:
+            _POLL_OWNER.pop(id(self.session), None)
         _sess.leave_current()
         self.session = None
         self._polling = False
@@ -462,6 +472,12 @@ class _Lobby:
             # 房间被换掉 / 已经离开，旧协程自动收摊（别拽着上一个房间不放）
             if (session is None or not self._polling
                     or session is not _sess.current()):
+                self._release_poll(session)
+                return
+            # 同一个房间同一时刻只允许一个轮询在跑：房间视图会被路由器缓存
+            # 复用，新旧实例若都活着就会互相抢事件（「开始」被旧实例吃掉，
+            # 可见的那个房间就收不到响应）。
+            if _POLL_OWNER.get(id(session)) is not self:
                 return
             try:
                 for kind, payload in session.drain():
@@ -480,7 +496,12 @@ class _Lobby:
                             # 收不到任何房间事件）：提示一句，继续等。
                             try:
                                 _enter_game_route(self.navigate, route)
-                                return
+                                # 关键：**这里不能 return**。以前一跳进对局页
+                                # 轮询协程就结束了，等玩家从对局页退回房间，
+                                # 房间视图是缓存复用的、build() 不会再跑，
+                                # 于是这端再也没有轮询 —— 房主第二次点开始，
+                                # 访客就再也收不到「开始」的响应（症状之二）。
+                                # 继续轮询：事件照收，界面刷新只在房间页可见时做。
                             except Exception as exc:      # noqa: BLE001
                                 print(f"[room] 进入对局失败：{exc!r}")
                                 self.tip.value = t("room.game_failed")
@@ -488,16 +509,20 @@ class _Lobby:
                     elif kind == "kicked":
                         self.system(t("room.kicked"))
                         self._polling = False
+                        _POLL_OWNER.pop(id(session), None)
                         _sess.leave_current()
                         self.navigate("/multiplayer")
                         return
                     elif kind == "voice_error":
                         self.tip.value = str(payload)
                         self.tip.color = ui.tone("danger")
-                self._render_seats()
-                if self.level.content is not None and session.voice.running:
-                    self.level.content = ui.level_bar(session.voice.level)
-                self.page.update()
+                # 只有房间页当前可见时才刷新界面：对局页盖住时去刷新
+                # page 会把整页重绘，既浪费又会打断对局页的渲染。
+                if self._room_visible():
+                    self._render_seats()
+                    if self.level.content is not None and session.voice.running:
+                        self.level.content = ui.level_bar(session.voice.level)
+                    self.page.update()
                 dead_updates = 0
             except Exception as exc:             # noqa: BLE001
                 # 席位表 / 渲染 / 刷新任何一环出错，都不能带走整个轮询
@@ -508,6 +533,16 @@ class _Lobby:
                 if dead_updates >= 20:
                     return
             await asyncio.sleep(POLL)
+
+    def _room_visible(self) -> bool:
+        """房间页是不是当前显示的那一页（对局页盖住时返回 False）。"""
+        r = Router.current
+        return r is not None and r.current_path() == "/room"
+
+    def _release_poll(self, session) -> None:
+        """交还轮询权（房间没了 / 换人了，别让旧条目一直占着位置）。"""
+        if session is not None and _POLL_OWNER.get(id(session)) is self:
+            _POLL_OWNER.pop(id(session), None)
 
 
 def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
