@@ -16,6 +16,7 @@ from core.router import Router
 from core.settings import Settings
 from core.window import apply_window_mode
 from core.views import (
+    build_history,
     build_menu,
     build_multiplayer,
     build_profile,
@@ -26,7 +27,7 @@ from core.views import (
 
 # 应用名（窗口标题 / Dock / 设置目录都用它）
 APP_NAME = "ATR Game"
-APP_VERSION = "0.4.8"
+APP_VERSION = "0.4.9"
 
 
 def _register_core_routes() -> None:
@@ -49,6 +50,9 @@ def _register_core_routes() -> None:
                                           title_key="route.profile"))
     registry.add_route(registry.RouteSpec("/settings", "设置", build_settings,
                                           title_key="route.settings"))
+    # 游玩记录：把所有游戏的历史记录汇在一张表里（主菜单入口）
+    registry.add_route(registry.RouteSpec("/history", "游玩记录", build_history,
+                                          title_key="route.history"))
 
 
 def run(page: ft.Page) -> None:

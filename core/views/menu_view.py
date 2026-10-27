@@ -2,10 +2,11 @@
 """主菜单：两扇门（单人游戏 / 多人游戏）+ 右下角「我的」+ 右上「设置」。
 
 0.4.7 起首页不再直接摊一堆游戏图标 —— 游戏多了会变成图标墙，很难找。
-首页只保留三个「去向」：
+首页只保留几个「去向」：
 
 * **单人游戏**：所有单机内容（陪 AI 玩 / 记牌器之类）；
 * **多人游戏**：局域网联机，创建或搜索房间；
+* **游玩记录**：所有游戏玩过的历史记录都汇在这一页（0.4.9 新增）；
 * **我的**：改名字（房间里别人看到的名字）。
 
 右下角「我的」参考多数游戏的 Profile 入口位置，顺手且不容易误触。
@@ -83,6 +84,8 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                              "🎮", "/single", "primary"),
                     big_door(t("menu.multiplayer"), t("menu.multiplayer_desc"),
                              "⚔️", "/multiplayer", "accent"),
+                    big_door(t("menu.history"), t("menu.history_desc"),
+                             "🕘", "/history", "gold"),
                 ],
                 wrap=True, spacing=14, run_spacing=14,
             ),

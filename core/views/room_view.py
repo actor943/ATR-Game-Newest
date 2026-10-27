@@ -52,6 +52,8 @@ POLL = 0.25                 # 界面刷新间隔（电平条需要一点点流�
 GAME_ROOM_ROUTE = {
     "guandan": "/g/guandan/play",
     "chess": "/g/chess/play",
+    "gomoku": "/g/gomoku/play",
+    "billiards": "/g/billiards/play",
 }
 
 # 一个房间同一时刻只允许一个轮询协程在跑（key = id(会话)）。
@@ -185,7 +187,8 @@ class _Lobby(RoomWidgetsMixin):
                 ui.chip(it.label, active=(it.id == session.info.game_id),
                         on_click=(lambda _e, gid=it.id,
                                   gt=it.label: self._set_room_game(gid, gt)))
-                for it in registry.menu_items() if it.available
+                for it in registry.menu_items()
+                if it.available and registry.game_online(it.id)
             ]
             inner = ft.Column(
                 [

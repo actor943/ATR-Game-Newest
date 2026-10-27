@@ -35,7 +35,7 @@ flet() { "$PY" -c "import sys; sys.argv[0]='flet'; from flet.cli import main; ma
 
 target="${1:-all}"
 
-echo "==> 目标：$target   应用：ATR Game 0.4.8"
+echo "==> 目标：$target   应用：ATR Game 0.4.9"
 echo "==> 输出目录：$(pwd)/dist"
 
 case "$target" in

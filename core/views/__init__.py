@@ -1,5 +1,6 @@
 """框架自带的核心视图（不属于任何具体游戏）。"""
 
+from .history_view import build as build_history
 from .menu_view import build as build_menu
 from .multiplayer_view import build as build_multiplayer
 from .profile_view import build as build_profile
@@ -8,6 +9,7 @@ from .settings_view import build as build_settings
 from .single_view import build as build_single
 
 __all__ = [
+    "build_history",
     "build_menu",
     "build_multiplayer",
     "build_profile",

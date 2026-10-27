@@ -23,7 +23,7 @@ import uuid
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +122,52 @@ def recent_logs(game_id: str = "", limit: int = 20) -> List[Path]:
         logger.warning("读取比赛记录列表失败: %s", exc)
         return []
     return files[:limit]
+
+
+def game_ids() -> List[str]:
+    """列出「有记录」的游戏 id（目录里有 .txt 才算）。
+
+    主菜单的「游玩记录」用它来决定筛选条上显示哪些游戏。
+    """
+    root = data_dir() / "logs"
+    if not root.exists():
+        return []
+    result: List[str] = []
+    try:
+        for child in root.iterdir():
+            if not child.is_dir():
+                continue
+            has_log = any(p.is_file() and p.suffix == ".txt"
+                          for p in child.iterdir())
+            if has_log:
+                result.append(child.name)
+    except OSError as exc:
+        logger.warning("读取游戏记录目录失败: %s", exc)
+        return []
+    return sorted(result)
+
+
+def recent_logs_all(limit: int = 200) -> List[Tuple[str, Path]]:
+    """跨**所有**游戏返回最近记录：``[(game_id, 文件路径)]``，按时间倒序。
+
+    主菜单的「游玩记录」页用它把各游戏的记录汇到一张表里。
+    """
+    root = data_dir() / "logs"
+    if not root.exists():
+        return []
+    items: List[Tuple[str, Path]] = []
+    try:
+        for child in root.iterdir():
+            if not child.is_dir():
+                continue
+            for path in child.iterdir():
+                if path.is_file() and path.suffix == ".txt":
+                    items.append((child.name, path))
+    except OSError as exc:
+        logger.warning("读取全部游戏记录失败: %s", exc)
+        return []
+    items.sort(key=lambda it: it[1].stat().st_mtime, reverse=True)
+    return items[:limit]
 
 
 def open_data_dir() -> Path:

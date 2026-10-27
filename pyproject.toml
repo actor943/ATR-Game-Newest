@@ -1,6 +1,6 @@
 [project]
 name = "atr-game"
-version = "0.4.8"
+version = "0.4.9"
 description = "ATR Game — 牌类游戏合集（掼蛋 / Splendor / Chess / Chinese Chess）"
 readme = "README.txt"
 requires-python = ">=3.10"

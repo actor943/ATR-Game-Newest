@@ -1,4 +1,4 @@
-# ATR Game 0.4.8 — 依赖清单
+# ATR Game 0.4.9 — 依赖清单
 #
 # 结论先说：**桌面运行时依赖 flet +（可选）numpy / sounddevice**，其余全部是
 # Python 标准库（asyncio / collections / dataclasses / datetime / enum / json /

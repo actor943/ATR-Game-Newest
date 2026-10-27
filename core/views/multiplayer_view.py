@@ -71,8 +71,9 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     tip = ui.hint("")
     tab_title = ui.hint(t("mp.tab_create"), "primary")
 
-    # 游戏列表：只列已经能玩的游戏
-    games = [it for it in registry.menu_items() if it.available]
+    # 游戏列表：只列已经能玩的游戏；单人游戏（online=False）不进房间列表
+    games = [it for it in registry.menu_items()
+             if it.available and registry.game_online(it.id)]
 
     # 表单容器：**不 expand**。放在可滚动的 Column 里还 expand，
     # 它会把剩余高度全吃掉、把下面的按钮顶出屏幕

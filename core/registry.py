@@ -92,6 +92,9 @@ class GamePlugin:
     # 该游戏「上场」所需的玩家数；多于这个数的人进房间后即为观战。
     # 默认 4（掼蛋这类 4 人局），棋类通常填 2。
     players: int = 4
+    # 该游戏能不能进多人房间。单人游戏（俄罗斯方块等）填 False，
+    # 它就不会出现在「多人游戏 / 建房」的游戏列表里。
+    online: bool = True
 
 
 # ============================================================
@@ -102,6 +105,7 @@ _menu_items: list[MenuItem] = []
 _routes: list[RouteSpec] = []
 _route_index: dict[str, RouteSpec] = {}
 _game_players: dict[str, int] = {}
+_game_online: dict[str, bool] = {}
 
 
 def add_menu_item(item: MenuItem) -> None:
@@ -123,11 +127,17 @@ def register_game(plugin: GamePlugin) -> None:
     for spec in plugin.routes:
         add_route(spec)
     _game_players[plugin.id] = plugin.players
+    _game_online[plugin.id] = plugin.online
 
 
 def game_players(game_id: str) -> int:
     """该游戏上场所需的玩家数（默认 4）。"""
     return _game_players.get(game_id, 4)
+
+
+def game_online(game_id: str) -> bool:
+    """该游戏能否进多人房间（单人游戏为 False，默认 True）。"""
+    return _game_online.get(game_id, True)
 
 
 def menu_items() -> list[MenuItem]:
@@ -147,3 +157,5 @@ def reset() -> None:
     _menu_items.clear()
     _routes.clear()
     _route_index.clear()
+    _game_players.clear()
+    _game_online.clear()

@@ -23,6 +23,12 @@ from core.registry import (  # noqa: F401
 from . import guandan  # noqa: F401
 # 占位子游戏：只有名字与插件框架，游戏逻辑尚未实现
 from . import splendor, chess, chinese_chess  # noqa: F401
+# 末尾追加一行
+from . import tetris  # noqa: F401
+# 末尾追加
+from . import gomoku  # noqa: F401
+# 末尾追加
+from . import billiards  # noqa: F401
 
 __all__ = [
     "GamePlugin",

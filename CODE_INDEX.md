@@ -38,7 +38,7 @@
 
 | 文件 | 行数 | 作用 |
 | --- | --- | --- |
-| `app.py` | 73 | 应用入口：配置 Flet 页面尺寸、注册核心路由、启动路由。`import games` 会触发各游戏插件注册。 |
+| `app.py` | 77 | 应用入口：配置 Flet 页面尺寸、注册核心路由（含 0.4.9 新增的「游玩记录」）、启动路由。`import games` 会触发各游戏插件注册。 |
 | `main.py` | 26 | `python -m main` 的启动脚本（桌面端）。 |
 | `build_all.py` | 86 | 打包脚本：把源码打成 macOS/Windows 可执行程序与安装包。 |
 
@@ -99,13 +99,14 @@
 | `core/net/voice.py` | 368 | 语音：采集 20ms 音频帧、UDP 单点发送、回放、电平统计。 |
 | `core/net/selftest.py` | 181 | 联机层自检：发现与加入、可靠消息、语音链路。 |
 
-### G. 框架层 · 记录与资料（3 个）
+### G. 框架层 · 记录与资料（4 个）
 
 | 文件 | 行数 | 作用 |
 | --- | --- | --- |
-| `core/history.py` | 131 | 对局记录**落盘**：写文件、列文件、读文件（掼蛋与象棋共用）。 |
-| `core/history_view.py` | 297 | 历史记录页：左边列表、右边详情。 |
+| `core/history.py` | 177 | 对局记录**落盘**：写文件、列文件、读文件；`game_ids()` / `recent_logs_all()` 用来跨游戏汇总（0.4.9 新增）。 |
+| `core/history_view.py` | 370 | 历史记录页：左边列表、右边详情；`all_games` 模式列出所有游戏的记录。 |
 | `core/profile.py` | 173 | 本地资料：昵称、设备号、房间码记忆、上次房间名。 |
+| `core/views/history_view.py` | 82 | 主页「游玩记录」页：汇总所有游戏 + 顶部按游戏筛选（0.4.9 新增）。 |
 
 ### H. 掼蛋 · 纯逻辑（不依赖 flet，可命令行直接跑）（15 个）
 
@@ -181,6 +182,46 @@
 | `games/placeholder.py` | 64 | 未实现游戏的通用占位页。 |
 | `games/splendor/plugin.py` | 43 | Splendor 占位插件（菜单里是灰的）。 |
 | `games/chinese_chess/plugin.py` | 43 | 中国象棋占位插件（菜单里是灰的）。 |
+
+### M. 五子棋（6 个，0.4.9 新增）
+
+| 文件 | 行数 | 作用 |
+| --- | --- | --- |
+| `games/gomoku/plugin.py` | 48 | 五子棋插件声明（players=2，路由 /g/gomoku、/g/gomoku/play、/g/gomoku/history）。 |
+| `games/gomoku/engine.py` | 175 | 棋局引擎：15 路棋盘、落子、五连判胜、平局、悔棋、序列化（联机快照）。 |
+| `games/gomoku/views.py` | 63 | 子菜单：本地对局 / 历史记录 / 规则说明。 |
+| `games/gomoku/views_board.py` | 449 | 棋盘画面（棋子落在**线的交汇点**上）、落子、悔棋、重开、联机同步、落盘。 |
+| `games/gomoku/history_view.py` | 65 | 五子棋历史记录页入口（复用 `core/history_view.py`）。 |
+| `games/gomoku/selftest.py` | 53 | 引擎自检：落子合法性 / 横五连 / 斜五连 / 悔棋 / 序列化往返。 |
+
+### N. 俄罗斯方块（6 个，0.4.9 新增）
+
+| 文件 | 行数 | 作用 |
+| --- | --- | --- |
+| `games/tetris/plugin.py` | 49 | 俄罗斯方块插件声明（players=1、online=False，不进多人房间列表）。 |
+| `games/tetris/engine.py` | 302 | 引擎：七种方块、移动 / 旋转 / 消行 / 计分 / 等级 / Hold / 幽灵块 / 序列化。 |
+| `games/tetris/views.py` | 64 | 子菜单：开始游戏 / 历史记录 / 操作说明。 |
+| `games/tetris/views_play.py` | 295 | 对局页：棋盘画面、键盘输入（兼容 flet 1.0 的 ArrowLeft 等按键名）、重力循环、落盘。 |
+| `games/tetris/history_view.py` | 59 | 俄罗斯方块历史记录页入口。 |
+| `games/tetris/selftest.py` | 35 | 引擎自检：方块齐全 / 硬降消行 / 同种子确定性 / 序列化往返。 |
+
+### O. 台球（12 个，0.4.9 新增）
+
+| 文件 | 行数 | 作用 |
+| --- | --- | --- |
+| `games/billiards/plugin.py` | 49 | 台球插件声明（players=2、online=True，路由 /g/billiards、/g/billiards/play、/g/billiards/history）。 |
+| `games/billiards/assets.py` | 44 | 贴图资源：球桌 `table.png`（1200×678，绿色台面区 1087×565）、球 `ball_1~16.png`；贴图路径与台面区的几何常量。 |
+| `games/billiards/physics.py` | 393 | **物理内核**（不依赖 flet）：球、球桌尺寸与缩放、摆球、库边反弹、等质量弹性碰撞、滚动摩擦、**子步进防穿透**、落袋判定（袋口位置量自贴图）、合法落点查找。 |
+| `games/billiards/engine.py` | 397 | **规则引擎**（不依赖 flet）：中式八球简化规则 —— 定花色、犯规判定（空杆 / 白球落袋 / 打进对方球）、换手、自由球、8 号球胜负、整局快照序列化。 |
+| `games/billiards/views_table.py` | 207 | 球桌画面：球桌贴图（按台面区对齐物理坐标）+ 绝对定位的球 + 瞄准线；`ft.GestureDetector` 把手势转成物理坐标。 |
+| `games/billiards/views_gesture.py` | 122 | 手势 mixin：按住白球往后拉（拉弓）瞄准、犯规后拖动摆白球。 |
+| `games/billiards/views_net.py` | 220 | 联机 mixin：算身份（1 号 / 2 号 / 观战）、击球请求、摆球请求、房主广播整局快照。 |
+| `games/billiards/views_play.py` | 417 | 对局页：组装球桌与信息栏、60FPS 物理主循环、界面刷新、重开、落盘。 |
+| `games/billiards/views.py` | 65 | 子菜单：开始对局 / 历史记录 / 规则说明。 |
+| `games/billiards/history_view.py` | 63 | 台球历史记录页入口（复用 `core/history_view.py`）。 |
+| `games/billiards/selftest.py` | 322 | 自检：摆球不重叠 / 碰撞交换法向速度 / 摩擦停球 / 撞库不出台 / 进袋 / 高速不穿透 / 犯规换手 / 8 号球胜负 / 快照往返。 |
+| `games/billiards/__init__.py` | 3 | 包入口（import 即注册）。 |
+
 
 ---
 

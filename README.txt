@@ -1,6 +1,6 @@
 README
 
-ATR Game V0.4.8
+ATR Game V0.4.9
 ===============
 
 1. 使用方法
@@ -8,6 +8,12 @@ ATR Game V0.4.8
 	掼蛋：子菜单「开始游戏」直接用上次的配置进牌桌（单人 / 三人机）
 	国际象棋：子菜单「开始对局」进入棋盘（本地双人轮流 / 联网对弈）；
 		子菜单「历史记录」回看以前下过的棋局着法
+	五子棋（0.4.9 新增）：子菜单「本地对局」下棋（15 路棋盘，黑先，
+		横/竖/斜连五即胜）；「历史记录」回看以前的棋局
+	俄罗斯方块（0.4.9 新增）：子菜单「开始游戏」单人消行；「历史记录」
+		回看以前的分数 / 等级 / 消行数
+	游玩记录（0.4.9 新增）：主页第三扇门「游玩记录」把**所有游戏**玩过的
+		记录汇在一张表里，顶部可按游戏筛选
 	联机房间：多人游戏 → 创建 / 搜索房间 → 进房间 → 房主「开始」众人进对局
 	掼蛋子菜单：快速记牌 / 牌型速查 / 全模拟 / 开始游戏
 	AI 建议后续版本上线
@@ -19,6 +25,8 @@ ATR Game V0.4.8
 	当你觉得网上掼蛋的记牌器居然需要豆子，太贵了点时候
 	国际象棋：本地双人（一手白一手黑）已可玩；房间内也能联网对弈
 		（同一 WiFi 下两人各坐一个席位即可实时同步走子）
+	五子棋 / 俄罗斯方块：0.4.9 新增，均可本地开局；五子棋还能在房间里
+		联机对弈（两人各坐一个席位即分别为黑方 / 白方，其余席位观战）
 	已规划：掼蛋 / Splendor / Chinese Chess（后两款仍为占位）
 
 3. 使用限制
@@ -45,6 +53,11 @@ ATR Game V0.4.8
 	出牌记录：同上目录下的 logs/guandan/*.txt，整场结束自动保存
 	象棋棋谱：同上目录下的 logs/chess/*.txt，将死 / 逼和 / 对手离场判胜后
 		自动保存，中途退出也会留一份（标「中途结束」）
+	五子棋棋谱：同上目录下的 logs/gomoku/*.txt，分出胜负或中途退出时保存
+	俄罗斯方块成绩：同上目录下的 logs/tetris/*.txt，方块堆到顶（游戏结束）
+		时保存分数 / 等级 / 消行数
+	游玩记录（主页第三扇门）把上述 logs/ 下**所有游戏**的记录汇总显示，
+		还能按游戏筛选；各游戏子菜单里的「历史记录」只看自己那一份
 
 7. 分发构建（apk / app / ipa）
 	一键脚本：./build_dist.sh apk | app | ipa | all，产物统一放在 dist/
@@ -107,10 +120,11 @@ ATR Game V0.4.8
 			rustic.py		暗黑2 / MC 石砖风（斜面描边、暗金、火把线）
 			registry.py	包注册表：内置两套，社区包 register 即出现
 		ui_theme.py	界面风格总控：当前包分发、切换、覆写 theme.T 全局换色
-		views/			核心视图（主菜单 / 单人 / 多人 / 房间 / 我的 / 设置）
+		views/			核心视图（主菜单 / 单人 / 多人 / 房间 / 我的 / 设置 / 游玩记录）
 			room_view.py	房间大厅骨架（进房/选游戏/开始/离开/轮询）
 			room_widgets.py	房间大厅零件（席位 / 语音 / 聊天）
 			multiplayer_view.py	多人页：创建房间 / 搜索房间
+			history_view.py	游玩记录页（汇总所有游戏 + 按游戏筛选）
 	games/				游戏插件
 		guandan/		掼蛋
 			analyzer.py	记牌算法（与 0.3 等价）
@@ -147,6 +161,24 @@ ATR Game V0.4.8
 					/g/chess/history）
 			selftest.py	引擎自检：python -m games.chess.selftest
 		chinese_chess/	占位（仅插件框架）
+		gomoku/		五子棋（0.4.9 落地为可玩游戏）
+			engine.py	棋局引擎：15 路棋盘 / 落子 / 五连判胜 / 悔棋 /
+					平局判定 / 序列化（联机快照）
+			views.py		子菜单（本地对局 / 历史记录 / 规则说明）
+			views_board.py	棋盘画面（棋子落在**线的交汇点**上）/ 落子 /
+					悔棋 / 重开 / 联机同步 / 落盘
+			history_view.py	历史记录页（委托 core/history_view）
+			plugin.py	插件声明（players=2，路由 /g/gomoku、/g/gomoku/play、
+					/g/gomoku/history）
+			selftest.py	引擎自检：python -m games.gomoku.selftest
+		tetris/		俄罗斯方块（0.4.9 落地为可玩游戏）
+			engine.py	引擎：七种方块 / 移动 / 旋转 / 消行 / 计分 /
+					等级 / Hold / 幽灵块 / 序列化
+			views.py		子菜单（开始游戏 / 历史记录 / 操作说明）
+			views_play.py	对局画面 + 键盘输入 + 重力循环 + 落盘
+			history_view.py	历史记录页（委托 core/history_view）
+			plugin.py	插件声明（players=1，online=False 不进多人房间）
+			selftest.py	引擎自检：python -m games.tetris.selftest
 
 8. 模拟器进度（0.4.1）
 	底层逻辑已完成并实测（多场自对弈全部正常收尾）

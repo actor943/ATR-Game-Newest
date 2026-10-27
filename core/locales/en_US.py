@@ -22,6 +22,18 @@ STRINGS: dict[str, str] = {
     "route.room": "Room",
     "route.profile": "Me",
     "route.settings": "Settings",
+    "route.gomoku": "Gomoku",
+    "route.gomoku.desc": "15x15 board, black first; five in a row wins",
+    "route.gomoku.play": "Gomoku · Match",
+    "route.history": "Match History",
+    "route.tetris": "Tetris",
+    "route.tetris.desc": "Seven classic pieces: line clears, combos, hold and "
+                         "ghost piece",
+    "route.tetris.play": "Tetris · Match",
+    "route.billiards": "Billiards",
+    "route.billiards.desc": "Top-down 2D pool: pull back to shoot, clear your "
+                            "group, then the 8-ball",
+    "route.billiards.play": "Billiards · Match",
 
     # ---------------- main menu ----------------
     "menu.settings": "Settings",
@@ -32,13 +44,96 @@ STRINGS: dict[str, str] = {
     "menu.single_desc": "Play against the AI, or use the offline tools",
     "menu.multiplayer": "Multiplayer",
     "menu.multiplayer_desc": "Host a room on the same WiFi, with voice chat",
-    "menu.footer": "v0.4.8 · LAN multiplayer",
+    "menu.history": "Match History",
+    "menu.history_desc": "Every game you have played, all in one place",
+    "menu.footer": "v0.4.9 · LAN multiplayer",
 
     # ---------------- single player ----------------
     "single.title": "Single Player",
     "single.subtitle": "Pick one and play against the AI (or an offline tool).",
     "single.more": "More games",
     "single.more_desc": "Tiandao / Dou Dizhu / Paodekuai… coming soon.",
+
+    # ---------------- gomoku ----------------
+    "gomoku.local": "Local match",
+    "gomoku.local_desc": "Two players take turns clicking cells; in a LAN room "
+                         "black and white are assigned by seat",
+    "gomoku.howto": "How to play",
+    "gomoku.howto_desc": "15x15, black first; five in a row (any direction) "
+                          "wins; no forbidden moves",
+    "gomoku.mode": "Mode",
+    "gomoku.mode_local": "Local (two players)",
+    "gomoku.mode_black": "Online · Black",
+    "gomoku.mode_white": "Online · White",
+    "gomoku.mode_spectator": "Online · Spectating",
+    "gomoku.turn": "Turn: {who}",
+    "gomoku.undo": "Undo",
+    "gomoku.restart": "Restart",
+    "gomoku.black": "Black",
+    "gomoku.white": "White",
+    "gomoku.black_win": "Black wins!",
+    "gomoku.white_win": "White wins!",
+    "gomoku.draw": "Draw",
+    "gomoku.history": "History",
+    "gomoku.history_desc": "Look back at previous games (saved automatically "
+                           "when a game ends)",
+
+    # ---------------- tetris ----------------
+    "tetris.start": "Start game",
+    "tetris.start_desc": "Endless single-player mode: clear lines to score, "
+                          "the higher the level the faster it falls",
+    "tetris.howto": "Controls",
+    "tetris.howto_desc": "Left/Right move · Up rotate · Down soft drop · "
+                          "Space hard drop · C hold",
+    "tetris.next": "Next",
+    "tetris.hold": "Hold",
+    "tetris.score": "Score",
+    "tetris.level": "Level",
+    "tetris.lines": "Lines",
+    "tetris.over": "Game over",
+    "tetris.restart": "Restart",
+    "tetris.history": "History",
+    "tetris.history_desc": "Look back at previous scores (saved automatically "
+                           "when a game ends)",
+
+    # ---------------- billiards ----------------
+    "billiards.local": "Start a match",
+    "billiards.local_desc": "Drag the cue ball back to shoot; in a LAN room "
+                            "players 1 and 2 are assigned by seat",
+    "billiards.howto": "How to play",
+    "billiards.howto_desc": "Simplified Chinese eight-ball: the first ball "
+                            "you pot picks your group, then the 8-ball",
+    "billiards.history": "History",
+    "billiards.history_desc": "Look back at previous games (saved "
+                               "automatically when a game ends)",
+    "billiards.mode": "Mode",
+    "billiards.mode_local": "Local (two players)",
+    "billiards.mode_p0": "Online · Player 1",
+    "billiards.mode_p1": "Online · Player 2",
+    "billiards.mode_spectator": "Online · Spectating",
+    "billiards.player1": "Player 1",
+    "billiards.player2": "Player 2",
+    "billiards.turn": "Turn: {who}",
+    "billiards.win": "{who} wins!",
+    "billiards.no_result": "No result",
+    "billiards.group_solid": "Solids",
+    "billiards.group_stripe": "Stripes",
+    "billiards.group_none": "Undecided",
+    "billiards.power": "Power",
+    "billiards.restart": "New game",
+    "billiards.continue": "Ball potted — shoot again",
+    "billiards.turn_pass": "Turn passes",
+    "billiards.eight_next": "Your group is gone — now for the 8-ball",
+    "billiards.free_ball": "Ball in hand: place the cue ball first",
+    "billiards.foul_scratch": "Foul: cue ball potted",
+    "billiards.foul_no_contact": "Foul: the cue ball hit nothing",
+    "billiards.foul_wrong_first": "Foul: cue ball hit the opponent first",
+    "billiards.foul_wrong_ball": "Foul: potted the opponent's ball",
+    "billiards.foul_eight_early": "Foul: the 8-ball was not yours to pot",
+    "billiards.hint_shoot": "Hold the cue ball and pull back, release to "
+                            "shoot (further = harder)",
+    "billiards.hint_place": "Drag the cue ball where you want it",
+    "billiards.hint_wait": "Waiting for the other player",
 
     # ---------------- profile ----------------
     "profile.title": "Me",
@@ -223,6 +318,12 @@ STRINGS: dict[str, str] = {
                            "{path}\n({exc})",
     "history.win_suffix": "{win} wins",
     "history.hands": "{n} rounds",
+    "history.moves": "{n} moves",
+    "history.score_suffix": "{score} pts",
+    "history.level_suffix": "Lv.{level}",
+    "history.lines_suffix": "{lines} lines",
+    "history.filter_all": "All",
+    "history.filter_hint": "Filter by game",
 
     # ---------------- game: Guandan ----------------
     "game.guandan.title": "Guandan",
