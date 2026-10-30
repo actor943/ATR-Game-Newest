@@ -95,6 +95,8 @@ STRINGS: dict[str, str] = {
     "tetris.history": "History",
     "tetris.history_desc": "Look back at previous scores (saved automatically "
                            "when a game ends)",
+    "tetris.keyboard_hint": "Arrows to move / rotate, Space to drop, C to hold",
+    "tetris.touch_hint": "Hold a key to repeat; swiping the board works too",
 
     # ---------------- billiards ----------------
     "billiards.local": "Start a match",

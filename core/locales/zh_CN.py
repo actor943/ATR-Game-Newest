@@ -101,6 +101,8 @@ STRINGS: dict[str, str] = {
     "tetris.restart": "重开",
     "tetris.history": "历史记录",
     "tetris.history_desc": "回看以前的成绩（每局结束自动保存）",
+    "tetris.keyboard_hint": "方向键移动 / 旋转，空格硬降，C 暂存",
+    "tetris.touch_hint": "按住下面的键可以连发，滑动棋盘也能操作",
 
     # ---------------- 台球 ----------------
     "billiards.local": "开始对局",

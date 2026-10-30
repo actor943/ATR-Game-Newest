@@ -190,7 +190,7 @@
 | `games/gomoku/plugin.py` | 48 | 五子棋插件声明（players=2，路由 /g/gomoku、/g/gomoku/play、/g/gomoku/history）。 |
 | `games/gomoku/engine.py` | 175 | 棋局引擎：15 路棋盘、落子、五连判胜、平局、悔棋、序列化（联机快照）。 |
 | `games/gomoku/views.py` | 63 | 子菜单：本地对局 / 历史记录 / 规则说明。 |
-| `games/gomoku/views_board.py` | 449 | 棋盘画面（棋子落在**线的交汇点**上）、落子、悔棋、重开、联机同步、落盘。 |
+| `games/gomoku/views_board.py` | 481 | 棋盘画面（棋子落在**线的交汇点**上）、落子、悔棋、重开、联机同步、落盘；**棋盘尺寸按屏幕宽度缩放**（手机上 448 → 320，整盘留在屏幕里）。 |
 | `games/gomoku/history_view.py` | 65 | 五子棋历史记录页入口（复用 `core/history_view.py`）。 |
 | `games/gomoku/selftest.py` | 53 | 引擎自检：落子合法性 / 横五连 / 斜五连 / 悔棋 / 序列化往返。 |
 
@@ -201,7 +201,9 @@
 | `games/tetris/plugin.py` | 49 | 俄罗斯方块插件声明（players=1、online=False，不进多人房间列表）。 |
 | `games/tetris/engine.py` | 302 | 引擎：七种方块、移动 / 旋转 / 消行 / 计分 / 等级 / Hold / 幽灵块 / 序列化。 |
 | `games/tetris/views.py` | 64 | 子菜单：开始游戏 / 历史记录 / 操作说明。 |
-| `games/tetris/views_play.py` | 295 | 对局页：棋盘画面、键盘输入（兼容 flet 1.0 的 ArrowLeft 等按键名）、重力循环、落盘。 |
+| `games/tetris/views_play.py` | 375 | 对局页：棋盘画面、输入统一（键盘 / 触屏 / 滑动走同一个 `_act`）、重力循环、落盘。 |
+| `games/tetris/views_pad.py` | 130 | **触屏操作键**：← → 移动、↻ 旋转、↓ 软降、⤓ 硬降、暂存；按住能连发（`on_tap_down`/`on_tap_up`）。 |
+| `games/tetris/views_layout.py` | 152 | 页面组装：宽屏「棋盘 + 右侧信息栏」，窄屏「顶部信息条 + 棋盘 + 底部操作键」。 |
 | `games/tetris/history_view.py` | 59 | 俄罗斯方块历史记录页入口。 |
 | `games/tetris/selftest.py` | 35 | 引擎自检：方块齐全 / 硬降消行 / 同种子确定性 / 序列化往返。 |
 

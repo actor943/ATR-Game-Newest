@@ -16,7 +16,7 @@ from core import registry
 from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
-from core.ui_common import app_bar, page_padding
+from core.ui_common import app_bar, page_padding, page_width
 
 from .engine import (
     BLACK, BLACK_WIN, DRAW, SIZE, WHITE, WHITE_WIN,
@@ -66,6 +66,29 @@ class _BoardPage:
         self.status_text = ft.Text("", size=14, color=T.TEXT_PRIMARY)
         self.turn_text = ft.Text("", size=14, color=T.TEXT_SECONDARY)
         self._log_saved = False          # 这一局是否已经落过盘
+        # 棋盘尺寸：按屏幕宽度缩放，手机上整盘留在屏幕里
+        (self.spacing, self.stone, self.margin,
+         self.board_size) = self._fit_board()
+        self._narrow = page_width(self.page) < 620      # 手机竖屏
+
+    # ---------- 尺寸 ----------
+
+    def _fit_board(self):
+        """按可用宽度算棋盘尺寸（线距 / 棋子 / 留白 / 整体边长）。
+
+        桌面按原尺寸（线距 28、棋子 22、整体 448），手机按比例缩小 ——
+        15 路棋盘在 375 逻辑像素宽的手机上必须缩，否则右边一列会跑到
+        屏幕外面去。
+        """
+        avail = page_width(self.page) - 2 * getattr(T, "PADDING", 16) - 20
+        if avail <= 0:
+            avail = 320.0
+        # 棋盘边长 = 2*留白 + (SIZE-1)*线距，而留白 = 线距 → 边长 = (SIZE+1)*线距
+        spacing = min(SPACING, max(14, int(avail) // (SIZE + 1)))
+        stone = max(11, int(round(STONE * spacing / float(SPACING))))
+        margin = spacing
+        size = 2 * margin + (SIZE - 1) * spacing
+        return spacing, stone, margin, size
 
     # ---------- 身份 ----------
 
@@ -108,10 +131,10 @@ class _BoardPage:
         border = _WIN_HL if highlight else (T.TEXT_INVERT if stone == BLACK
                                             else "#555555")
         return ft.Container(
-            width=STONE, height=STONE,
+            width=self.stone, height=self.stone,
             bgcolor=color,
             border=ft.Border.all(2 if highlight else 1, border),
-            border_radius=STONE // 2,
+            border_radius=self.stone // 2,
         )
 
     def _grid_lines(self) -> list:
@@ -120,14 +143,14 @@ class _BoardPage:
         **线是画出来的，棋子摆在这些线的交汇点上**（五子棋的规矩）：
         第 (r,c) 个交叉点的坐标 = (MARGIN + c*SPACING, MARGIN + r*SPACING)。
         """
-        span = (SIZE - 1) * SPACING
+        span = (SIZE - 1) * self.spacing
         lines = []
         for i in range(SIZE):
             lines.append(ft.Container(
-                left=MARGIN, top=MARGIN + i * SPACING,
+                left=self.margin, top=self.margin + i * self.spacing,
                 width=span, height=1, bgcolor=_GRID_LINE))
             lines.append(ft.Container(
-                left=MARGIN + i * SPACING, top=MARGIN,
+                left=self.margin + i * self.spacing, top=self.margin,
                 width=1, height=span, bgcolor=_GRID_LINE))
         return lines
 
@@ -141,8 +164,8 @@ class _BoardPage:
                                   (7, 7)):
                     continue
                 dots.append(ft.Container(
-                    left=MARGIN + c * SPACING - 3,
-                    top=MARGIN + r * SPACING - 3,
+                    left=self.margin + c * self.spacing - 3,
+                    top=self.margin + r * self.spacing - 3,
                     width=6, height=6,
                     bgcolor=_GRID_LINE, border_radius=3))
         return dots
@@ -157,12 +180,12 @@ class _BoardPage:
         stone = s.board[r][c]
         win = (r, c) in set(s.win_line)
         clickable = self._can_click() and stone == 0
-        center_x = MARGIN + c * SPACING
-        center_y = MARGIN + r * SPACING
+        center_x = self.margin + c * self.spacing
+        center_y = self.margin + r * self.spacing
         return ft.Container(
-            left=center_x - SPACING // 2,
-            top=center_y - SPACING // 2,
-            width=SPACING, height=SPACING,
+            left=center_x - self.spacing // 2,
+            top=center_y - self.spacing // 2,
+            width=self.spacing, height=self.spacing,
             alignment=ft.Alignment.CENTER,
             ink=clickable,
             on_click=(lambda _e, rr=r, cc=c: self._on_click(rr, cc))
@@ -189,7 +212,7 @@ class _BoardPage:
         self.board_host.controls = [
             ft.Stack(
                 controls=[*self._grid_lines(), *self._star_points(), *stones],
-                width=BOARD_SIZE, height=BOARD_SIZE,
+                width=self.board_size, height=self.board_size,
             )
         ]
 
@@ -385,32 +408,41 @@ class _BoardPage:
             padding=ft.Padding.all(2),
             content=self.board_host,
         )
-        side = ft.Column(
-            [
-                ft.Text(t("gomoku.mode", default="模式"), size=11,
-                        color=T.TEXT_MUTED),
-                ft.Text(self._identity_label(), size=13,
-                        color=T.TEXT_PRIMARY),
-                ft.Container(height=8),
-                self.turn_text,
-                self.status_text,
-                ft.Container(height=10),
-                ft.Button(
-                    content=ft.Text(t("gomoku.undo", default="悔棋")),
-                    on_click=self._undo,
-                ),
-                ft.Button(
-                    content=ft.Text(t("gomoku.restart", default="重开")),
-                    on_click=self._restart,
-                ),
-            ],
-            spacing=4,
-        )
-        body = ft.Row(
-            [board_panel, ft.Container(width=16), side],
-            alignment=ft.MainAxisAlignment.CENTER,
-            vertical_alignment=ft.CrossAxisAlignment.START,
-        )
+        side_items = [
+            ft.Text(t("gomoku.mode", default="模式"), size=11,
+                    color=T.TEXT_MUTED),
+            ft.Text(self._identity_label(), size=13,
+                    color=T.TEXT_PRIMARY),
+            self.turn_text,
+            self.status_text,
+            ft.Button(
+                content=ft.Text(t("gomoku.undo", default="悔棋")),
+                on_click=self._undo,
+            ),
+            ft.Button(
+                content=ft.Text(t("gomoku.restart", default="重开")),
+                on_click=self._restart,
+            ),
+        ]
+        if self._narrow:
+            # 手机竖屏：信息横着放在棋盘下面，别把棋盘挤到屏幕外
+            side = ft.Row(
+                side_items, spacing=8, wrap=True, run_spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            )
+            body = ft.Column(
+                [board_panel, ft.Container(height=10), side],
+                spacing=0,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                scroll=ft.ScrollMode.AUTO,
+            )
+        else:
+            side = ft.Column(side_items, spacing=4)
+            body = ft.Row(
+                [board_panel, ft.Container(width=16), side],
+                alignment=ft.MainAxisAlignment.CENTER,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+            )
 
         def _back(_e):
             # 中途退出也留一份记录（还没分出胜负）
