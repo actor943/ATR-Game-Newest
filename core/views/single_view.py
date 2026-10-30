@@ -13,6 +13,7 @@ from core import registry
 from core import ui_theme as ui
 from core.i18n import t
 from core.registry import NavigateFn
+from core.ui_common import grid_cards
 
 
 def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
@@ -28,18 +29,15 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         # .label / .desc 会按当前语言翻译（游戏插件登记了 title_key/desc_key）
         cards.append(
             ui.card(item.label, item.desc, item.icon,
-                    go(item.home_path), available=item.available, width=300)
+                    go(item.home_path), available=item.available)
         )
     cards.append(
         ui.card(t("single.more"), t("single.more_desc"),
-                "🎴", available=False, width=300)
+                "🎴", available=False)
     )
 
-    grid = ft.Column(
-        [ft.Row(cards[i:i + 2], wrap=True, spacing=12, run_spacing=12)
-         for i in range(0, len(cards), 2)],
-        spacing=12,
-    )
+    # 铺满宽度：宽屏多列、窄屏自动退化为单列（不再挤在左边一列）
+    grid = grid_cards(page, cards, ideal_w=300, spacing=12, max_cols=4)
 
     body = ft.Column(
         [

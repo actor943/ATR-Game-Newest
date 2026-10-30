@@ -138,6 +138,11 @@ STRINGS: dict[str, str] = {
     "billiards.hint_shoot": "按住白球往后拉，松手击球（拉得越远越用力）",
     "billiards.hint_place": "先把白球拖到想要的位置",
     "billiards.hint_wait": "等对手出手",
+    "billiards.angle": "角度",
+    "billiards.force": "力度（牛）",
+    "billiards.shoot": "击球",
+    "billiards.angle_deg": "角度 {deg:.0f}°",
+    "billiards.control_hint": "转盘定方向，力度条定力量（0~75 牛），点「击球」出杆",
 
     # ---------------- 我的 ----------------
     "profile.title": "我的",

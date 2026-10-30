@@ -62,7 +62,12 @@ copyright = "Copyright © 2026 ATR Game"
 [tool.flet.app]
 # 显式指定入口文件是 main.py（或者去掉 .py 后缀的模块名）
 module = "main"
-# 不打进安装包的东西：两个 venv、缓存、个人音乐、构建产物
+# 不打进安装包的东西：两个 venv、缓存、构建产物
+# 注意：曾经这里写死排除 ``assets/Songs``（想在桌面端省体积），但那个名字首字母
+# 大写，在大小写不敏感的 macOS 上正好匹配到真实的 ``assets/songs``，于是
+# `flet build apk` 在 Mac 上打包时把整个音频目录都排除了 —— 手机端「没有音频库」。
+# 0.4.10：把音频资源（歌曲 / 音效）一并打进所有平台的安装包，桌面端语音仍由
+# [tool.flet.<平台>].dependencies 的 sounddevice 提供（见下方语音小节）。
 exclude = [
     "venv",
     ".venv",
@@ -70,7 +75,6 @@ exclude = [
     "*.pyc",
     "build",
     "dist",
-    "assets/Songs",
 ]
 
 # Android：自适应图标底色用主题蓝；不给敏感权限

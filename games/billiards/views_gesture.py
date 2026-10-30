@@ -31,7 +31,13 @@ class PlayGestureMixin:
         return max(30.0, self.engine.table.height * 0.42)
 
     def _on_pan_start(self, x: float, y: float) -> None:
-        """按下：必须按在母球上才生效。"""
+        """按下开始拖拽：瞄准模式可在桌面任意位置起手（手机更好戳）。
+
+        过去必须按在母球上（半径 2.4 倍内）才算抓住，白球只有二十几像素、
+        手指触控面积大，经常抓空。现在放宽：只要轮到你、母球在台面上，
+        在桌子任意位置按下都能拉弓 —— 方向仍是「母球 − 指针」，
+        所以「往后拉、球往前走」的手感不变，只是起点不用精准命中小球。
+        """
         self._drag = None
         self._aim = None
         if not self._may_act():
@@ -39,8 +45,6 @@ class PlayGestureMixin:
         cue = self.engine.cue
         if cue is None or not cue.active:
             return
-        if math.hypot(x - cue.x, y - cue.y) > cue.radius * 2.4:
-            return                            # 没抓到母球
         self._drag = "place" if self.engine.ball_in_hand else "aim"
         if self._drag == "place":
             self._place_preview(x, y)

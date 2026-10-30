@@ -136,6 +136,12 @@ STRINGS: dict[str, str] = {
                             "shoot (further = harder)",
     "billiards.hint_place": "Drag the cue ball where you want it",
     "billiards.hint_wait": "Waiting for the other player",
+    "billiards.angle": "Angle",
+    "billiards.force": "Force (N)",
+    "billiards.shoot": "Shoot",
+    "billiards.angle_deg": "Angle {deg:.0f}°",
+    "billiards.control_hint": "Dial sets direction, bar sets force (0-75 N), "
+                             "press Shoot",
 
     # ---------------- profile ----------------
     "profile.title": "Me",

@@ -16,19 +16,6 @@ from . import ui_theme as _ui
 from .theme import T
 
 
-def app_bar(
-    title: str,
-    *,
-    on_back: Optional[Callable] = None,
-    actions: Optional[list[ft.Control]] = None,
-) -> ft.Container:
-    """通用顶栏：左侧返回（可选）+ 中间标题 + 右侧动作区。
-
-    外观由当前界面包决定（默认=平面描边，石砖包=暗金火把线）。
-    """
-    return _ui.bar(title, on_back=on_back, actions=actions)
-
-
 def menu_card(
     title: str,
     description: str,
@@ -36,14 +23,13 @@ def menu_card(
     *,
     available: bool = True,
     on_click=None,
+    width: Optional[int] = None,
 ) -> ft.Container:
     """主菜单与子菜单上的大卡片。
 
-    注意：这一份是**固定扁平样式**（不随界面包换皮），未开放的卡片会挂一个
-    「敬请期待」角标。项目里另有一份转发到界面包的实现
-    （:func:`core.ui_theme.card`），一旦要启用界面包皮肤，把下面的实现换成
-    ``return _ui.card(title, description, icon, on_click, available=available)``
-    并补回角标即可。
+    0.4.10：默认 ``expand=True``（不再写死 260px），放在 ``Row(wrap=True)``
+    里时会自动平分、铺满整行 —— 解决宽屏「卡片全堆在左边一列、右边一片空白」。
+    仍可用 ``width=`` 强制固定宽度（如需要窄卡片时）。
     """
     bg = T.SURFACE
     border = T.BORDER
@@ -65,7 +51,8 @@ def menu_card(
             on_click(_e)
 
     return ft.Container(
-        width=260,
+        width=width,
+        expand=(width is None),
         padding=ft.Padding.all(16),
         bgcolor=bg,
         border=ft.Border.all(1, border),
@@ -91,6 +78,20 @@ def menu_card(
             spacing=0,
         ),
     )
+def app_bar(
+    title: str,
+    *,
+    on_back: Optional[Callable] = None,
+    actions: Optional[list[ft.Control]] = None,
+) -> ft.Container:
+    """通用顶栏：左侧返回（可选）+ 中间标题 + 右侧动作区。
+
+    外观由当前界面包决定（默认=平面描边，石砖包=暗金火把线）。
+    """
+    return _ui.bar(title, on_back=on_back, actions=actions)
+
+
+
 
 
 def status_pill(text: str, color: Optional[str] = None) -> ft.Container:
@@ -178,3 +179,40 @@ def fit_card_row(
             w = min_card_w
     h = max(24, round(w * card_h / card_w))
     return w, h, int(step - w), per_row, rows
+
+
+def grid_cards(
+    page: ft.Page,
+    cards: list[ft.Control],
+    *,
+    ideal_w: int = 320,
+    spacing: int = 14,
+    max_cols: int = 4,
+    min_w: int = 220,
+) -> ft.Control:
+    """把一组卡片**铺满可用宽度**，而不是挤在左边一列。
+
+    0.4.10 之前：菜单 / 子菜单的卡片用固定宽度 ``Row(wrap=True)``，
+    宽屏上三张 300px 卡片全堆在左边，右边一大片空白。
+
+    现在按页面宽度算出能放几列，每张卡片等宽铺开到屏幕左右边缘
+    （列数 = ⌊(可用宽+间距) / (理想宽+间距)⌋，封顶 ``max_cols``）；
+    卡片不足一行时左对齐，多出的行各自铺满。窄屏自动退化为单列。
+
+    注意：``cards`` 里每个控件会被就地改掉 ``width``（``ui.card`` 默认 300），
+    其内部文字列带 ``expand``，会跟着撑开。
+    """
+    avail = page_width(page) - 2 * T.PADDING
+    if avail <= 0:
+        avail = 800                       # 取不到宽度时的兜底（约等于窄桌面）
+    cols = max(1, min(max_cols,
+                     int((avail + spacing) // (ideal_w + spacing))))
+    cw = (avail - (cols - 1) * spacing) / cols
+    cw = max(min_w, cw)
+    rows: list[ft.Control] = []
+    for i in range(0, len(cards), cols):
+        chunk = cards[i:i + cols]
+        for c in chunk:
+            c.width = int(cw)
+        rows.append(ft.Row(list(chunk), spacing=spacing))
+    return ft.Column(rows, spacing=spacing)

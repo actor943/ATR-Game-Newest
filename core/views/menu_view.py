@@ -21,6 +21,7 @@ from core import ui_theme as ui
 from core.i18n import t
 from core.profile import Profile
 from core.registry import NavigateFn
+from core.ui_common import grid_cards
 
 
 def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
@@ -35,7 +36,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     def big_door(title: str, desc: str, icon: str, path: str,
                  tone: str) -> ft.Control:
         """首页的一扇「门」：大图标 + 标题 + 说明。"""
-        return ui.card(title, desc, icon, go(path), width=300)
+        return ui.card(title, desc, icon, go(path))
 
     header = ft.Row(
         [
@@ -78,17 +79,14 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
             ui.text(t("route.home"), 26, "", ft.FontWeight.BOLD),
             ui.text(t("menu.where"), 13, "secondary"),
             ft.Container(height=26),
-            ft.Row(
-                [
-                    big_door(t("menu.single"), t("menu.single_desc"),
-                             "🎮", "/single", "primary"),
-                    big_door(t("menu.multiplayer"), t("menu.multiplayer_desc"),
-                             "⚔️", "/multiplayer", "accent"),
-                    big_door(t("menu.history"), t("menu.history_desc"),
-                             "🕘", "/history", "gold"),
-                ],
-                wrap=True, spacing=14, run_spacing=14,
-            ),
+            grid_cards(page, [
+                big_door(t("menu.single"), t("menu.single_desc"),
+                         "🎮", "/single", "primary"),
+                big_door(t("menu.multiplayer"), t("menu.multiplayer_desc"),
+                         "⚔️", "/multiplayer", "accent"),
+                big_door(t("menu.history"), t("menu.history_desc"),
+                         "🕘", "/history", "gold"),
+            ]),
             ft.Container(expand=True),
             ft.Row(
                 [

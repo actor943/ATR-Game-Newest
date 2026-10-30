@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import time
 from typing import Optional, Tuple
 
@@ -41,7 +42,10 @@ from .engine import (
     FOUL_WRONG_BALL, FOUL_WRONG_FIRST, GROUP_SOLID, GROUP_STRIPE,
     PHASE_OVER, PHASE_SHOOT,
 )
-from .physics import BASE_H, BASE_W
+from .physics import (
+    BASE_H, BASE_W, FORCE_MAX_N, force_to_power, power_to_force,
+)
+from .views_controls import AngleDial, PowerBar
 from .views_gesture import PlayGestureMixin
 from .views_net import PlayNetMixin
 from .views_table import TableView
@@ -123,6 +127,19 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
             width=120, height=8, bgcolor=T.SURFACE_ALT, border_radius=4,
             content=self.power_fill,
         )
+
+        # ----- 外接控制器：角度转盘 + 力度条（牛顿）-----
+        # 手机端不用去戳白球也能精准瞄准；桌面端作为「拉弓」之外的补充。
+        self._aim_angle = 0.0                   # 弧度，y 轴向下
+        self._force_n = 30.0                    # 当前力度（牛顿）
+        self.dial = AngleDial(size=130.0,
+                              on_change=self._on_dial_change)
+        self.powerbar = PowerBar(width=46.0, height=170.0, max_n=FORCE_MAX_N,
+                                 on_change=self._on_power_change)
+        self.force_text = ft.Text("", size=13, color=T.TEXT_PRIMARY,
+                                  weight=ft.FontWeight.BOLD)
+        self.angle_text = ft.Text("", size=11, color=T.TEXT_SECONDARY)
+        self.control_hint = ft.Text("", size=11, color=T.TEXT_MUTED)
 
     # ============================================================
     # 主循环
@@ -244,6 +261,61 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
             self.hint_text.value = t("billiards.hint_shoot")
         else:
             self.hint_text.value = t("billiards.hint_wait")
+        # 轮到本机时，把转盘/力度条的当前值反映到球桌瞄准线上
+        self._update_aim_preview()
+
+    # ============================================================
+    # 外接控制器：角度转盘 + 力度条（牛顿）
+    # ============================================================
+
+    def _on_dial_change(self, angle: float) -> None:
+        """转盘转了：更新方向并实时刷新球桌瞄准线。"""
+        self._aim_angle = float(angle)
+        self._update_aim_preview()
+        self._render_controls_text()
+        self.page.update()
+
+    def _on_power_change(self, force_n: float) -> None:
+        """力度条拖了：刷新力度数值与瞄准线长度。"""
+        self._force_n = float(force_n)
+        self._render_power(force_to_power(self._force_n))
+        self._update_aim_preview()
+        self._render_controls_text()
+        self.page.update()
+
+    def _update_aim_preview(self) -> None:
+        """把转盘角度 + 力度条，画成球桌上的瞄准线（仅本机可操作时）。"""
+        cue = self.engine.cue
+        if cue is None or not self._may_act() or self.engine.ball_in_hand:
+            self.table_view.clear_aim()
+            return
+        power = force_to_power(self._force_n)
+        dx = math.cos(self._aim_angle)
+        dy = math.sin(self._aim_angle)
+        self.table_view.set_aim(cue.x, cue.y, dx, dy, power)
+
+    def _render_controls_text(self) -> None:
+        """力度（牛）与角度（度）的实时读数。"""
+        self.force_text.value = "{n:.0f} N".format(n=self._force_n)
+        deg = math.degrees(self._aim_angle) % 360
+        self.angle_text.value = t("billiards.angle_deg", deg=deg)
+        if not self._may_act():
+            self.control_hint.value = t("billiards.hint_wait")
+        elif self.engine.ball_in_hand:
+            self.control_hint.value = t("billiards.hint_place")
+        else:
+            self.control_hint.value = t("billiards.control_hint")
+
+    def _shoot_from_controls(self, _e=None) -> None:
+        """按转盘角度 + 力度条出杆（手机端主操作）。"""
+        if not self._may_act() or self.engine.ball_in_hand:
+            return
+        power = force_to_power(self._force_n)
+        if power < 0.06:
+            return
+        dx = math.cos(self._aim_angle)
+        dy = math.sin(self._aim_angle)
+        self._shoot(dx, dy, power)
 
     def _identity_label(self) -> str:
         """本机身份的一句话。"""
@@ -346,6 +418,54 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
         # 球画在 Stack 里，桌子建好之后再补一次（sync 会把球加进去）
         self.table_view.sync()
 
+        # 外接控制器：转盘 + 力度条 + 读数 + 击球按钮（摆在下方的空位）
+        self._render_power(force_to_power(self._force_n))
+        self._render_controls_text()
+
+        controls_panel = ft.Row(
+            [
+                ft.Column(
+                    [
+                        ft.Text(t("billiards.angle"), size=11,
+                                color=T.TEXT_MUTED),
+                        self.dial.control,
+                    ],
+                    spacing=4,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Container(width=10),
+                ft.Column(
+                    [
+                        ft.Text(t("billiards.force"), size=11,
+                                color=T.TEXT_MUTED),
+                        self.powerbar.control,
+                    ],
+                    spacing=4,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Container(width=14),
+                ft.Column(
+                    [
+                        self.force_text,
+                        self.angle_text,
+                        ft.Container(height=8),
+                        ft.Button(content=ft.Text(t("billiards.shoot"),
+                                                  size=15),
+                                  width=120, height=46,
+                                  on_click=self._shoot_from_controls),
+                        ft.Container(height=4),
+                        self.control_hint,
+                    ],
+                    spacing=3,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            wrap=True,
+            run_spacing=12,
+        )
+
         side = ft.Column(
             [
                 ft.Text(t("billiards.mode"), size=11, color=T.TEXT_MUTED),
@@ -377,15 +497,24 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
             run_spacing=10,
         )
 
+        content = ft.Column(
+            [body, ft.Container(height=12), controls_panel],
+            spacing=0,
+        )
+
         def _back(_e):
             self._save_match_log(False)
             self._detach()
-            self.navigate("/g/billiards")
+            # 联机对局：返回房间大厅（不要直接退到单人台球）
+            if self.net is not None:
+                self.navigate("/room")
+            else:
+                self.navigate("/g/billiards")
 
         return ft.Column(
             [app_bar(t("route.billiards.play", default="台球 · 对局"),
                      on_back=_back),
-             page_padding(body)],
+             page_padding(content)],
             expand=True,
         )
 
