@@ -8,7 +8,7 @@ import flet as ft
 from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
-from core.ui_common import app_bar, menu_card, page_padding
+from core.ui_common import app_bar, grid_cards, menu_card, page_padding
 
 from . import views_play
 from .history_view import open_history
@@ -27,7 +27,8 @@ def build_home(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     def _history(_e):
         open_history(navigate)
 
-    body = ft.Row(
+    body = grid_cards(
+        page,
         [
             menu_card(
                 t("tetris.start", default="开始游戏"),
@@ -48,7 +49,7 @@ def build_home(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                 "?", available=False,
             ),
         ],
-        spacing=16, wrap=True,
+        ideal_w=300, spacing=16, max_cols=4,
     )
     return ft.Column(
         [

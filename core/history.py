@@ -30,11 +30,33 @@ logger = logging.getLogger(__name__)
 APP_DIR_NAME = "ATR Game"
 
 
+def _is_android() -> bool:
+    """是否运行在 Android 上（Python 在安卓也是 Linux 内核，需与桌面区分）。"""
+    if platform.system() != "Linux":
+        return False
+    if os.environ.get("ANDROID_DATA") or os.environ.get("ANDROID_ROOT"):
+        return True
+    if os.path.exists("/system/build.prop"):
+        return True
+    try:
+        return "android" in (os.uname().release or "").lower()
+    except Exception:
+        return False
+
+
 def data_dir() -> Path:
     """返回应用**数据**目录，跨平台。
 
     先判断 :func:`platform.system`，避免在 Windows 上调用不存在的 ``os.uname``。
+
+    Android 特殊处理：flet 通过 ``FLET_APP_STORAGE_DATA`` 暴露可写且跨启动
+    持久的 App 私有数据目录；旧的 XDG 路径（``~/.local/share``）在安卓沙箱里
+    不可写，会导致比赛记录落盘静默失败。
     """
+    if platform.system() == "Linux" and _is_android():
+        android_storage = os.environ.get("FLET_APP_STORAGE_DATA")
+        if android_storage:
+            return Path(android_storage) / APP_DIR_NAME
     system = platform.system()
     if system == "Darwin":
         return Path.home() / "Library" / "Application Support" / APP_DIR_NAME

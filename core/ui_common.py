@@ -23,13 +23,14 @@ def menu_card(
     *,
     available: bool = True,
     on_click=None,
-    width: Optional[int] = None,
+    width: int = 260,
 ) -> ft.Container:
     """主菜单与子菜单上的大卡片。
 
-    0.4.10：默认 ``expand=True``（不再写死 260px），放在 ``Row(wrap=True)``
-    里时会自动平分、铺满整行 —— 解决宽屏「卡片全堆在左边一列、右边一片空白」。
-    仍可用 ``width=`` 强制固定宽度（如需要窄卡片时）。
+    注意：**不要**给这个卡片设 ``expand=True``！它在各游戏子菜单里是放在
+    ``Row(wrap=True)``（Flutter 的 Wrap 控件）里的，而 Flutter 规定
+    ``Expanded`` 只能存在于 ``Flex``（Row/Column）里，**放进 Wrap 会直接抛断言、
+    整页白屏**。要铺满宽度请用 :func:`grid_cards`，它会给每张卡算好显式宽度。
     """
     bg = T.SURFACE
     border = T.BORDER
@@ -52,7 +53,6 @@ def menu_card(
 
     return ft.Container(
         width=width,
-        expand=(width is None),
         padding=ft.Padding.all(16),
         bgcolor=bg,
         border=ft.Border.all(1, border),

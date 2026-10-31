@@ -1,6 +1,29 @@
 Version:
 
-0.4.10-修复（音频打包 / 桌球联机返回 / 手机操控 / 现实参数 / 宽屏 UI）:
+0.4.9-修复（安卓端起名保存不生效）:
+	修复：安卓端「我的」里改名保存后不生效，退出重启也不生效
+		原因：profile.json / settings.json 的落盘目录在安卓上走 ``~/.config``
+			（旧 _config_dir 把安卓 Linux 内核当成普通 Linux），该路径在安卓
+			App 沙箱里不可写，save() 静默返回 None，名字从未真正落盘。
+		处理：检测到安卓（ANDROID_DATA / build.prop / uname 含 android）时，
+			改用 flet 通过 FLET_APP_STORAGE_DATA 暴露的 App 私有持久数据目录
+			（可写且跨启动保留）；桌面端路径不变，不影响已有桌面存档。
+			history.py 的 data_dir 同病，一并修正（比赛记录落盘同理）。
+
+0.4.10-修复（音频打包 / 桌球联机返回 / 手机操控 / 现实参数 / 宽屏 UI / 白屏）:
+
+修复：桌球等子菜单「界面完全空白」（白屏）
+	根因：上一轮把 menu_card 默认设为 expand=True，但它被放在各游戏子菜单的
+		Row(wrap=True)（Flutter 的 Wrap 控件）里。Flutter 规定 Expanded 只能
+		存在于 Flex（Row/Column），放进 Wrap 会直接抛断言、整页白屏。
+	处理：
+		· menu_card 改回显式宽度（不再 expand）；
+		· 各子菜单首页（桌球 / 五子棋 / 国际象棋 / 俄罗斯方块 / 掼蛋）改用
+		  core.ui_common.grid_cards() 按页面宽度给每张卡算显式宽度来铺满，
+		  彻底避开「Expanded 放进 Wrap」这个致命组合；
+		· grid_cards 内部只用普通 Row（不带 wrap），卡片用显式 width，安全且填满。
+
+
 
 修复：手机端不会打包音频文件
 	原因：pyproject.toml 的 exclude 写死排除了 "assets/Songs"（首字母大写），

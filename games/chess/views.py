@@ -25,7 +25,7 @@ import flet as ft
 from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
-from core.ui_common import app_bar, page_padding, menu_card
+from core.ui_common import app_bar, grid_cards, page_padding, menu_card
 from core.net import session as _sess
 from core import registry
 
@@ -60,22 +60,26 @@ def build_home(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
         ft.Text(t("chess.home.intro"),
                 size=13, color=T.TEXT_SECONDARY),
         ft.Container(height=16),
-        ft.Row([
-            menu_card(
-                title=t("chess.home.play"),
-                description=t("chess.home.play_desc"),
-                icon="♟️",
-                available=True,
-                on_click=go_play,
-            ),
-            menu_card(
-                title=t("chess.home.history"),
-                description=t("chess.home.history_desc"),
-                icon="🕘",
-                available=True,
-                on_click=go_history,
-            )
-        ], wrap=True),
+        grid_cards(
+            _page,
+            [
+                menu_card(
+                    title=t("chess.home.play"),
+                    description=t("chess.home.play_desc"),
+                    icon="♟️",
+                    available=True,
+                    on_click=go_play,
+                ),
+                menu_card(
+                    title=t("chess.home.history"),
+                    description=t("chess.home.history_desc"),
+                    icon="🕘",
+                    available=True,
+                    on_click=go_history,
+                ),
+            ],
+            ideal_w=300, spacing=16, max_cols=4,
+        ),
     ])
 
     return ft.Column(

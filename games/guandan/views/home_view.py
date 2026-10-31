@@ -8,7 +8,7 @@ import flet as ft
 from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
-from core.ui_common import app_bar, menu_card
+from core.ui_common import app_bar, grid_cards, menu_card
 from games.guandan.views.history_view import open_history
 
 
@@ -40,7 +40,8 @@ def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
                     color=T.TEXT_SECONDARY),
             ft.Container(height=8),
             # 第一行：开始游戏 + 快速记牌
-            ft.Row(
+            grid_cards(
+                _page,
                 [
                     menu_card(
                         title=t("guandan.play"),
@@ -57,13 +58,12 @@ def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
                         on_click=go("/g/guandan/board"),
                     ),
                 ],
-                wrap=True,
-                spacing=12,
-                run_spacing=12,
+                ideal_w=300, spacing=12, max_cols=4,
             ),
             ft.Container(height=12),
             # 第二行：牌型速查 + 全模拟
-            ft.Row(
+            grid_cards(
+                _page,
                 [
                     menu_card(
                         title=t("guandan.types"),
@@ -80,13 +80,12 @@ def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
                         on_click=go("/g/guandan/simulator"),
                     ),
                 ],
-                wrap=True,
-                spacing=12,
-                run_spacing=12,
+                ideal_w=300, spacing=12, max_cols=4,
             ),
             ft.Container(height=12),
             # 第三行：历史记录 + AI 建议（占位）
-            ft.Row(
+            grid_cards(
+                _page,
                 [
                     menu_card(
                         title=t("guandan.history"),
@@ -102,9 +101,7 @@ def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
                         available=False,
                     ),
                 ],
-                wrap=True,
-                spacing=12,
-                run_spacing=12,
+                ideal_w=300, spacing=12, max_cols=4,
             ),
         ],
         spacing=0,
