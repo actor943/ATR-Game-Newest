@@ -29,6 +29,10 @@ from . import tetris  # noqa: F401
 from . import gomoku  # noqa: F401
 # 末尾追加
 from . import billiards  # noqa: F401
+# 0.4.10 新增：复古贪吃蛇（单人，含变速功能，手机端兼容）
+from . import snake  # noqa: F401
+# 0.4.10 新增：Chrome 小恐龙（单人跑酷，自动加速，手机端兼容）
+from . import dino  # noqa: F401
 
 __all__ = [
     "GamePlugin",

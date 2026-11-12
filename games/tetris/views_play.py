@@ -204,7 +204,7 @@ class _PlayPage(LayoutMixin):
         "arrowleft": "left", "arrowright": "right",
         "arrowup": "rotate", "arrowdown": "down",
         "a": "left", "d": "right", "w": "rotate", "s": "down",
-        ":": "rotate", " ": "drop", "space": "drop",
+        ":": "rotate", "space": "drop",
         "c": "hold",
     }
 
@@ -234,9 +234,12 @@ class _PlayPage(LayoutMixin):
             self._save_match_log()
 
     def _on_key(self, e: ft.KeyboardEvent):
-        raw = (e.key or "")
-        key = raw.lower().replace(" ", "")
-        action = self._KEY_ALIAS.get(key)
+        # flet 把空格上报为 " "，strip 后变空串，这里归一为 "space"，
+        # 否则空格键（硬降）映射会落空。
+        raw = (e.key or "").strip().lower()
+        if raw == "" or raw == "spacebar":
+            raw = "space"
+        action = self._KEY_ALIAS.get(raw)
         if action:
             self._act(action)
 

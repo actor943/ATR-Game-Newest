@@ -15,7 +15,7 @@ import flet as ft
 
 from core.i18n import t
 from core.theme import T
-from core.ui_common import app_bar, page_padding
+from core.ui_common import app_bar, page_padding, tap_button
 
 
 class LayoutMixin:
@@ -60,10 +60,8 @@ class LayoutMixin:
                 ], spacing=6),
                 ft.Container(height=8),
                 self.status_text,
-                ft.Button(
-                    content=ft.Text(t("tetris.restart", default="重开")),
-                    on_click=lambda _e: self._restart(),
-                ),
+                tap_button(t("tetris.restart", default="重开"),
+                           lambda _e: self._restart()),
                 ft.Container(height=6),
                 ft.Text(t("tetris.keyboard_hint",
                           default="方向键移动 / 旋转，空格硬降，C 暂存"),
@@ -98,8 +96,8 @@ class LayoutMixin:
         ], spacing=2)
         return ft.Row(
             [next_col, hold_col, score_col,
-             ft.Button(content=ft.Text(t("tetris.restart", default="重开")),
-                       on_click=lambda _e: self._restart())],
+             tap_button(t("tetris.restart", default="重开"),
+                        lambda _e: self._restart())],
             spacing=10,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             wrap=True,

@@ -216,3 +216,51 @@ def grid_cards(
             c.width = int(cw)
         rows.append(ft.Row(list(chunk), spacing=spacing))
     return ft.Column(rows, spacing=spacing)
+
+
+def tap_button(
+    text: str,
+    on_click=None,
+    *,
+    icon=None,
+    size: int = 14,
+    width: Optional[int] = None,
+    height: int = 38,
+    primary: bool = False,
+    text_color=None,
+) -> ft.Control:
+    """鼠标 / 触控专用按钮（**不可获得键盘焦点**）。
+
+    与 ``ft.Button`` 不同，它用 :class:`ft.GestureDetector` 实现，Flutter 不会
+    给它建 ``FocusNode``，于是：
+
+    * 方向键**不会**把焦点高亮移到它上面（不会「方向键移动光标」）；
+    * 空格 / 回车**不会**触发它（不会误按按钮）。
+
+    专门给「用方向键操作的游戏」（俄罗斯方块 / 贪吃蛇）的对局页用：
+    这样方向键只会被游戏自己吃掉，不会在按钮之间乱跳、也不会误触按钮。
+    点击 / 触摸照常可用（仍是鼠标触控交互）。
+    """
+    label_color = text_color or T.TEXT_PRIMARY
+    if icon is not None:
+        content = ft.Row(
+            [icon, ft.Text(text, size=size, color=label_color)],
+            spacing=4, tight=True,
+        )
+    else:
+        content = ft.Text(text, size=size, color=label_color)
+    box = ft.Container(
+        width=width, height=height,
+        bgcolor=T.PRIMARY if primary else T.SURFACE_ALT,
+        border=ft.Border.all(1, T.BORDER),
+        border_radius=8,
+        alignment=ft.Alignment.CENTER,
+        padding=ft.Padding.symmetric(horizontal=12, vertical=4),
+        content=content,
+    )
+
+    def _tap(_e):
+        if on_click is not None:
+            on_click(_e)
+
+    return ft.GestureDetector(content=box, on_tap=_tap)
