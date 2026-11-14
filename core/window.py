@@ -34,8 +34,10 @@ MODE_LABEL_KEYS = {
 # 窗口模式下的默认尺寸（仅 WINDOWED 使用）
 DEFAULT_WIDTH = 1280
 DEFAULT_HEIGHT = 800
-MIN_WIDTH = 640
-MIN_HEIGHT = 700
+# 下限原来 640×700：小尺寸笔记本 / 横屏手机上几乎没法缩小窗口，
+# 也挡住了用户「先还原再最大化」的操作。放宽到常见的最小值。
+MIN_WIDTH = 480
+MIN_HEIGHT = 560
 
 
 def normalize(mode: Optional[str]) -> str:
@@ -60,6 +62,13 @@ def apply_window_mode(page: ft.Page, settings: Settings) -> None:
 
     page.window.min_width = MIN_WIDTH
     page.window.min_height = MIN_HEIGHT
+    # 明确允许缩放 / 最大化（某些平台默认会禁掉最大化按钮，
+    # 用户就会以为「这个程序没法最大化」）。
+    for attr in ("resizable", "maximizable"):
+        try:
+            setattr(page.window, attr, True)
+        except Exception:                   # noqa: BLE001 — 平台不支持就忽略
+            pass
 
     if mode == FULLSCREEN:
         page.window.full_screen = True

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import flet as ft
 
+from core import responsive
 from core.theme import T
-from core.ui_common import page_width
 
 from .assets import piece_image_src
 from .engine import PROMO_ORDER
@@ -24,13 +24,25 @@ CHECK_TINT = "#FF8A80"
 class ChessBoardMixin:
     """棋盘画面、点格子走子、升变选择。"""
 
+    # 棋盘边长上限：0.4.10 写死 460（宽屏上永远只有巴掌大），
+    # 现在按「可用宽 / 可用高」一起算，宽屏能放大到 720。
+    BOARD_MAX = 720
+
     # ---------- 棋盘绘制 ----------
     def _cell_size(self) -> int:
 
-        """算棋盘一格该画多大（跟着窗口宽度走）。"""
-        avail = page_width(self.page) - 2 * getattr(T, "PADDING", 16) - 12
-        board_w = min(avail, 460)
-        return max(34, int(board_w / 8))
+        """算棋盘一格该画多大（宽高一起算，宽屏放大、矮窗口不溢出）。"""
+        pad = 2 * getattr(T, "PADDING", 16)
+        avail_w = responsive.page_width(self.page) - pad - 12
+        # 扣掉顶栏、状态文字、工具栏与页面内边距，保证棋盘不被挤出屏幕
+        avail_h = responsive.page_height(self.page) - 56 - pad - 120
+        board_w = min(avail_w, avail_h, self.BOARD_MAX)
+        return max(30, int(board_w / 8))
+
+    def _on_viewport(self, _w: float, _h: float) -> None:
+        """窗口尺寸变了：只重画棋盘格子，棋局 / 棋谱状态原样保留。"""
+        self._render_board()
+        self.page.update()
 
     def _render_board(self):
 

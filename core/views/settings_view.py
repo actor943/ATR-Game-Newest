@@ -21,6 +21,7 @@ from __future__ import annotations
 import flet as ft
 
 from core import i18n
+from core import responsive
 from core import theme
 from core import ui_theme as ui
 from core.i18n import t
@@ -124,6 +125,13 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         window_text.value = mode_label(s.window_mode)
         # 立刻应用：全屏 / 最大化即时生效，窗口模式改尺寸
         apply_window_mode(page, s)
+        # 窗口尺寸变了：把「尺寸真相」同步给响应式中枢，并重建无状态页，
+        # 否则缓存里的菜单 / 棋盘仍按切换前的宽度排版（0.4.10 的遗留问题）。
+        w, h = responsive.size(page)
+        responsive.dispatch(page, w, h)
+        router = Router.current
+        if router is not None:
+            router.reflow(responsive.is_static_route)
         page.update()
 
     def row(label: str, value_text: ft.Text, on_change,

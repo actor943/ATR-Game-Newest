@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import flet as ft
 
+from core import responsive
 from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
@@ -130,6 +131,9 @@ class ChessPlayView(ChessBoardMixin, ChessSyncMixin, ChessRecordMixin):
     # ------------------------------------------------------------------
     def build(self) -> ft.Control:
         self._render_board()
+        # 按 key 订阅：路由缓存里若还留着旧棋局实例，新实例会覆盖它，
+        # 窗口变化时只有当前这一个棋盘会重画。
+        responsive.subscribe(self.page, "chess.play", self._on_viewport)
 
         def on_undo(_e):
             # 联网时只有「轮到你」才能悔棋（撤回对方刚走的一步）
@@ -173,6 +177,7 @@ class ChessPlayView(ChessBoardMixin, ChessSyncMixin, ChessRecordMixin):
             self._save_match_log(finished=False)
             global _ACTIVE
             _ACTIVE = None
+            responsive.unsubscribe(self.page, "chess.play", self._on_viewport)
             if self.net is not None:
                 self.net.set_game_handler(None)
             self.navigate("/g/chess" if self.net is None else "/room")

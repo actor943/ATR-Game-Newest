@@ -22,8 +22,6 @@ from games.guandan.rules import beats, parse
 from games.guandan.tribute import GIFT, RETURN, auto_pick
 from games.guandan.views.play_const import (
     FG,
-    HAND_BOX_HEIGHT,
-    HAND_BOX_MAX_HEIGHT,
     HAND_ROW_GAP,
     LEVEL_GOLD,
     LIFT,
@@ -270,7 +268,7 @@ class PlayActionsMixin:
             extra = 76 + (26 if gift_row else 0)
             need = 20 + len(rows) * (ch + HAND_ROW_GAP) + 46 + extra
             self.hand_box.height = float(
-                min(HAND_BOX_MAX_HEIGHT, max(HAND_BOX_HEIGHT, need)))
+                min(self.m["hand_box_max"], max(self.m["hand_box"], need)))
 
         confirm = ft.Button(
             content=ft.Text("确定"), height=40, width=110,

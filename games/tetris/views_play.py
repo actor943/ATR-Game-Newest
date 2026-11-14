@@ -36,16 +36,17 @@ from typing import List, Optional
 
 import flet as ft
 
+from core import responsive
 from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
-from core.ui_common import page_width
 
 from .engine import COLS, HIDDEN_ROWS, ROWS, SHAPES, TetrisEngine
 from .views_layout import LayoutMixin
 from .views_pad import TouchPad
 
-CELL_MAX = 26          # 格子最大边长（宽屏）
+CELL_MAX = 26          # 窄屏（手机竖屏）格子边长上限
+CELL_WIDE_MAX = 42     # 宽屏放大上限：10×20 棋盘最大 420×840
 CELL_MIN = 12          # 格子最小边长（手机）
 NARROW_W = 620         # 小于这个宽度按「手机竖屏」处理
 GHOST = "#5A6472"      # 幽灵块颜色
@@ -84,24 +85,22 @@ class _PlayPage(LayoutMixin):
     # ---------- 布局 ----------
 
     def _layout(self) -> None:
-        """按屏幕宽高决定格子大小和布局形态。"""
-        w = page_width(self.page, fallback=420.0)
-        try:
-            h = float(getattr(self.page, "height", None) or 720.0)
-        except Exception:                   # noqa: BLE001
-            h = 720.0
+        """按屏幕宽高决定格子大小和布局形态（宽屏放大、窄屏缩小）。"""
+        w, h = responsive.size(self.page)
         plat = str(getattr(self.page, "platform", "") or "").lower()
         self._touch = (w < NARROW_W) or plat in ("android", "ios")
         if self._touch:
             # 手机竖屏：扣掉标题栏、信息条、操作键和留白
             avail_w = w - 40.0
             avail_h = h - 56.0 - 60.0 - 150.0 - 24.0
-            cell = min(avail_w / COLS, avail_h / ROWS)
-            self.cell = max(CELL_MIN, min(CELL_MAX, cell))
-            self.mini = max(10.0, self.cell * 0.6)
         else:
-            self.cell = CELL_MAX
-            self.mini = CELL_MAX
+            # 宽屏：棋盘 + 右侧信息栏；按剩余宽和高一起算，能放多大放多大
+            avail_w = w - 32.0 - 16.0 - 200.0
+            avail_h = h - 56.0 - 32.0 - 20.0
+        cell = min(avail_w / COLS, avail_h / ROWS)
+        cap = CELL_MAX if self._touch else CELL_WIDE_MAX
+        self.cell = max(CELL_MIN, min(cap, cell))
+        self.mini = max(10.0, min(34.0, self.cell * 0.7))
 
     def _apply_cell_size(self) -> None:
         """格子边长变了就同步到所有格子控件上。"""
@@ -299,11 +298,9 @@ class _PlayPage(LayoutMixin):
     def _attach(self):
         self._prev_keyboard = self.page.on_keyboard_event
         self.page.on_keyboard_event = self._on_key
-        try:
-            self._prev_resize = self.page.on_resize
-            self.page.on_resize = self._on_resize
-        except Exception:                   # noqa: BLE001
-            self._prev_resize = None
+        # 不直接给 page.on_resize 赋值：框架层已经装了唯一的 resize 分发器，
+        # 直接赋值会把全局重排 / 其它页面的订阅全顶掉。
+        responsive.subscribe(self.page, "tetris.play", self._on_resize)
         # 用 page.run_task 起重力循环（和其它游戏一致）：
         # 它跑在 flet 自己的事件循环上，直接 asyncio.ensure_future
         # 在没有运行中事件循环的线程里会 RuntimeError。
@@ -312,8 +309,12 @@ class _PlayPage(LayoutMixin):
         except Exception:                   # noqa: BLE001
             self._task = None
 
-    def _on_resize(self, e):
-        """屏幕尺寸变了：重算格子边长，整盘留在屏幕里。"""
+    def _on_resize(self, *_args):
+        """屏幕尺寸变了：重算格子边长，整盘留在屏幕里。
+
+        兼容两种调用方式：全局分发器传 ``(width, height)``，旧代码直接把
+        flet 事件对象传进来。两种都忽略参数，重新读 :mod:`core.responsive`。
+        """
         self._layout()
         self._apply_cell_size()
         self._refresh()
@@ -329,10 +330,7 @@ class _PlayPage(LayoutMixin):
             self.page.on_keyboard_event = self._prev_keyboard
         except Exception:  # noqa: BLE001 — 页面已销毁
             pass
-        try:
-            self.page.on_resize = self._prev_resize
-        except Exception:                   # noqa: BLE001
-            pass
+        responsive.unsubscribe(self.page, "tetris.play", self._on_resize)
         self.pad.detach()
 
     def _restart(self):

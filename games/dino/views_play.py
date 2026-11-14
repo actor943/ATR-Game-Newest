@@ -23,10 +23,10 @@ from typing import Dict, Optional
 
 import flet as ft
 
+from core import responsive
 from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
-from core.ui_common import page_width
 
 from .engine import (
     DINO_DUCK_H, DINO_STAND_H, DINO_W, DINO_X, GROUND_TOP, WORLD_H, WORLD_W, Dino,
@@ -337,17 +337,15 @@ class _PlayPage(LayoutMixin):
     def _attach(self):
         self._prev_keyboard = self.page.on_keyboard_event
         self.page.on_keyboard_event = self._on_key
-        try:
-            self._prev_resize = self.page.on_resize
-            self.page.on_resize = self._on_resize
-        except Exception:                   # noqa: BLE001
-            self._prev_resize = None
+        # 走全局 resize 分发器，不覆盖框架 / 其它页面的回调
+        responsive.subscribe(self.page, "dino.play", self._on_resize)
         try:
             self._task = self.page.run_task(self._loop)
         except Exception:                   # noqa: BLE001
             self._task = None
 
-    def _on_resize(self, e):
+    def _on_resize(self, *_args):
+        """屏幕尺寸变了：重算舞台尺寸（兼容事件对象与 (w, h) 两种签名）。"""
         self._layout()
         self._apply_stage_size()
         self._refresh()
@@ -363,10 +361,7 @@ class _PlayPage(LayoutMixin):
             self.page.on_keyboard_event = self._prev_keyboard
         except Exception:  # noqa: BLE001
             pass
-        try:
-            self.page.on_resize = self._prev_resize
-        except Exception:                   # noqa: BLE001
-            pass
+        responsive.unsubscribe(self.page, "dino.play", self._on_resize)
         self.pad.detach()
 
     def _restart(self, start: bool = True):

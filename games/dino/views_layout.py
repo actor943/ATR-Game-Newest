@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import flet as ft
 
+from core import responsive
 from core.i18n import t
 from core.theme import T
-from core.ui_common import app_bar, page_padding, tap_button, page_width
+from core.ui_common import app_bar, page_padding, tap_button
 
 from .engine import WORLD_H, WORLD_W
 
@@ -20,11 +21,8 @@ class LayoutMixin:
     # ---------- 自适应缩放 ----------
 
     def _layout(self) -> None:
-        w = page_width(self.page, fallback=420.0)
-        try:
-            h = float(getattr(self.page, "height", None) or 720.0)
-        except Exception:                   # noqa: BLE001
-            h = 720.0
+        """按宽高一起算舞台缩放（宽屏放大、窄屏缩小，且不出屏幕）。"""
+        w, h = responsive.size(self.page)
         plat = str(getattr(self.page, "platform", "") or "").lower()
         self._touch = (w < NARROW_W) or plat in ("android", "ios")
         if self._touch:
@@ -36,7 +34,7 @@ class LayoutMixin:
             avail_w = (w - 260.0) - 40.0
             avail_h = h - 56.0 - 40.0
         scale = min(avail_w / WORLD_W, avail_h / WORLD_H)
-        self.scale = max(2.0, scale)
+        self.scale = max(2.0, min(scale, 18.0))
         self._apply_stage_size()
 
     # ---------- 控件小工具 ----------

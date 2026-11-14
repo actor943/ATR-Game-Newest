@@ -225,9 +225,12 @@ class MaterialPack(BasePack):
             height=56, bgcolor=self.colors.surface,
             border=ft.Border.only(bottom=ft.BorderSide(1, self.colors.border)),
             padding=ft.Padding.symmetric(horizontal=8),
+            # alignment 让顶栏在宽屏上铺满整行（否则底色只画到文字右边）；
+            # Row 里的 expand 占位把右侧动作推到屏幕右边缘。
+            alignment=ft.Alignment.CENTER_LEFT,
             content=ft.Row(
                 [*left, self.text(title_text, 18, "text", ft.FontWeight.BOLD),
-                 *(actions or [])],
+                 ft.Container(expand=True), *(actions or [])],
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 spacing=4,
             ),
@@ -237,14 +240,16 @@ class MaterialPack(BasePack):
              on_back: Optional[Callable] = None,
              actions: Optional[List[ft.Control]] = None) -> ft.Control:
 
-        """整页骨架：顶栏 + 内容。"""
+        """整页骨架：顶栏 + 内容（横向铺满整屏）。"""
         return ft.Column(
             [
                 self.bar(title_text, on_back, actions),
                 ft.Container(padding=ft.Padding.all(self.padding),
+                             alignment=ft.Alignment.TOP_LEFT,
                              content=content, expand=True),
             ],
             expand=True,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
     def wrap(self, control: ft.Control) -> ft.Control:

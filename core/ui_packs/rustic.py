@@ -289,6 +289,7 @@ class RusticPack(BasePack):
             height=56, bgcolor=STONE_PANEL,
             border=ft.Border.only(bottom=ft.BorderSide(2, GOLD_DARK)),
             padding=ft.Padding.symmetric(horizontal=12),
+            alignment=ft.Alignment.CENTER_LEFT,
             content=ft.Row(
                 [*left,
                  ft.Container(expand=True,
@@ -303,14 +304,16 @@ class RusticPack(BasePack):
              on_back: Optional[Callable] = None,
              actions: Optional[List[ft.Control]] = None) -> ft.Control:
 
-        """整页骨架：顶栏 + 内容。"""
+        """整页骨架：顶栏 + 内容（横向铺满整屏）。"""
         return ft.Column(
             [
                 self.bar(title_text, on_back, actions),
                 ft.Container(padding=ft.Padding.all(self.padding),
+                             alignment=ft.Alignment.TOP_LEFT,
                              content=content, expand=True),
             ],
             expand=True,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
     def wrap(self, control: ft.Control) -> ft.Control:

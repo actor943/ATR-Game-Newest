@@ -13,10 +13,11 @@ from typing import Optional
 import flet as ft
 
 from core import registry
+from core import responsive
 from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
-from core.ui_common import app_bar, page_padding, page_width
+from core.ui_common import app_bar, page_padding
 
 from .engine import (
     BLACK, BLACK_WIN, DRAW, SIZE, WHITE, WHITE_WIN,
@@ -24,8 +25,9 @@ from .engine import (
 )
 
 CELL = 30                       # 旧版「按格子」布局用的格宽（保留备用）
-SPACING = 28                    # 相邻两个**交叉点**之间的距离（棋盘线间距）
-STONE = 22                      # 棋子直径
+SPACING = 28                    # 基准线间距（中等窗口）
+SPACING_MAX = 48                # 宽屏最大线间距：15 路棋盘可放大到 768px
+STONE = 22                      # 棋子直径（随线距等比放大）
 MARGIN = SPACING                # 棋盘留白：最外侧那条线离边的距离
 BOARD_SIZE = 2 * MARGIN + (SIZE - 1) * SPACING      # 棋盘整体边长
 
@@ -66,29 +68,38 @@ class _BoardPage:
         self.status_text = ft.Text("", size=14, color=T.TEXT_PRIMARY)
         self.turn_text = ft.Text("", size=14, color=T.TEXT_SECONDARY)
         self._log_saved = False          # 这一局是否已经落过盘
-        # 棋盘尺寸：按屏幕宽度缩放，手机上整盘留在屏幕里
+        self._narrow = responsive.page_width(self.page) < 620   # 手机竖屏
+        # 棋盘尺寸：窄屏缩小、宽屏放大，宽高都不溢出
         (self.spacing, self.stone, self.margin,
          self.board_size) = self._fit_board()
-        self._narrow = page_width(self.page) < 620      # 手机竖屏
 
     # ---------- 尺寸 ----------
 
     def _fit_board(self):
-        """按可用宽度算棋盘尺寸（线距 / 棋子 / 留白 / 整体边长）。
+        """按可用宽高算棋盘尺寸（线距 / 棋子 / 留白 / 整体边长）。
 
-        桌面按原尺寸（线距 28、棋子 22、整体 448），手机按比例缩小 ——
-        15 路棋盘在 375 逻辑像素宽的手机上必须缩，否则右边一列会跑到
-        屏幕外面去。
+        0.4.10 只做 ``min(SPACING, ...)``，宽屏永远停在 448px 的小棋盘；
+        现在同时按宽、高算，上限放宽到 ``SPACING_MAX``（15 路 → 768px）。
+        棋盘边长 = (SIZE+1) × 线距（留白也等于线距）。
         """
-        avail = page_width(self.page) - 2 * getattr(T, "PADDING", 16) - 20
-        if avail <= 0:
-            avail = 320.0
-        # 棋盘边长 = 2*留白 + (SIZE-1)*线距，而留白 = 线距 → 边长 = (SIZE+1)*线距
-        spacing = min(SPACING, max(14, int(avail) // (SIZE + 1)))
+        pad = 2 * getattr(T, "PADDING", 16)
+        avail_w = responsive.page_width(self.page) - pad - 20
+        avail_h = responsive.page_height(self.page) - 56 - pad - 110
+        if not self._narrow:
+            avail_w -= 200                  # 宽屏右侧信息栏
+        avail = max(240.0, min(avail_w, avail_h))
+        spacing = int(responsive.clamp(avail / (SIZE + 1), 14, SPACING_MAX))
         stone = max(11, int(round(STONE * spacing / float(SPACING))))
         margin = spacing
         size = 2 * margin + (SIZE - 1) * spacing
         return spacing, stone, margin, size
+
+    def _on_viewport(self, _w: float, _h: float) -> None:
+        """窗口尺寸变了：重算线距并重画棋盘，棋局状态原样保留。"""
+        (self.spacing, self.stone, self.margin,
+         self.board_size) = self._fit_board()
+        self._render_board()
+        self.page.update()
 
     # ---------- 身份 ----------
 
@@ -394,6 +405,8 @@ class _BoardPage:
         global _ACTIVE
         _ACTIVE = self
         self._refresh()
+        # 按 key 订阅：只有当前这一局会响应窗口尺寸变化
+        responsive.subscribe(self.page, "gomoku.play", self._on_viewport)
         if self.net is not None:
             # 接管房间里的玩法消息；先跟房主要一份当前局面（中途加入也能对上）
             try:
@@ -462,6 +475,7 @@ class _BoardPage:
         global _ACTIVE
         if _ACTIVE is self:
             _ACTIVE = None
+        responsive.unsubscribe(self.page, "gomoku.play", self._on_viewport)
         if self.net is not None:
             try:
                 self.net.set_game_handler(None)

@@ -12,6 +12,7 @@ from typing import Callable, Optional
 
 import flet as ft
 
+from . import responsive
 from . import ui_theme as _ui
 from .theme import T
 
@@ -111,8 +112,26 @@ def divider(height: int = 1, color: Optional[str] = None) -> ft.Container:
 
 
 def page_padding(content: ft.Control) -> ft.Container:
+    """页面内容区：整屏铺开，而不是缩到内容固有宽度。
+
+    两个关键点：
+    * 外层 Container 给 ``alignment`` —— Flutter 的 Container 在有对齐且
+      父级宽度有界时会撑满父级宽度（顶栏底色、边框才不会只画一小条）；
+    * 内容若是普通（非滚动）Column，把它的交叉轴改成 STRETCH，里面的
+      设置面板 / 卡片列才会跟着铺满；带滚动的手机排版保持原样，避免把
+      固定尺寸的舞台 / 棋盘硬拉宽。
+    """
+    try:
+        if (isinstance(content, ft.Column)
+                and content.scroll is None
+                and content.horizontal_alignment
+                in (ft.CrossAxisAlignment.START, ft.CrossAxisAlignment.CENTER)):
+            content.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
+    except Exception:                           # noqa: BLE001 — 控件类型变了就算了
+        pass
     return ft.Container(
         padding=ft.Padding.all(T.PADDING),
+        alignment=ft.Alignment.TOP_LEFT,
         content=content,
     )
 
@@ -122,21 +141,18 @@ def page_padding(content: ft.Control) -> ft.Container:
 # ============================================================
 
 def page_width(page: ft.Page, fallback: float = 420.0) -> float:
-    """当前页面宽度：优先 ``page.width``，退到窗口宽度，再退到 ``fallback``。
+    """当前页面宽度：走 :mod:`core.responsive` 的「尺寸真相」。
 
-    手机端屏幕只有 360～430 逻辑像素，手牌一排 27 张必然放不下；
-    所有按宽度自适应的地方都从这里取宽度。
+    旧实现只读一次 ``page.width``，首帧拿不到就兜底 420（手机宽），于是
+    宽屏也会被画成窄屏。现在优先取最近一次 resize 事件的宽高，能实时反映
+    窗口最大化 / 从窗口模式切回全屏的变化。
     """
-    try:
-        w = getattr(page, "width", None)
-        if w:
-            return float(w)
-        w = getattr(getattr(page, "window", None), "width", None)
-        if w:
-            return float(w)
-    except Exception:  # noqa: BLE001 — 取不到就按窄屏兜底
-        pass
-    return fallback
+    return responsive.page_width(page, fallback)
+
+
+def page_height(page: ft.Page, fallback: float = 720.0) -> float:
+    """当前页面高度（游戏画面按宽高一起缩放时用它）。"""
+    return responsive.page_height(page, fallback)
 
 
 def fit_card_row(
@@ -190,31 +206,42 @@ def grid_cards(
     max_cols: int = 4,
     min_w: int = 220,
 ) -> ft.Control:
-    """把一组卡片**铺满可用宽度**，而不是挤在左边一列。
+    """把一组卡片**铺满可用宽度**，并且会跟着窗口变化自动伸缩。
 
-    0.4.10 之前：菜单 / 子菜单的卡片用固定宽度 ``Row(wrap=True)``，
-    宽屏上三张 300px 卡片全堆在左边，右边一大片空白。
+    0.4.10 之前：固定宽度 ``Row(wrap=True)``，宽屏上三张 300px 卡片全堆在
+    左边；0.4.10 改成按页面宽度算显式 ``c.width``，仍是「构建时写死一次」，
+    且列数按 ``max_cols`` 算、最后一行不足列数时右侧会空 1/4~1/2 屏。
 
-    现在按页面宽度算出能放几列，每张卡片等宽铺开到屏幕左右边缘
-    （列数 = ⌊(可用宽+间距) / (理想宽+间距)⌋，封顶 ``max_cols``）；
-    卡片不足一行时左对齐，多出的行各自铺满。窄屏自动退化为单列。
-
-    注意：``cards`` 里每个控件会被就地改掉 ``width``（``ui.card`` 默认 300），
-    其内部文字列带 ``expand``，会跟着撑开。
+    现在：按当前宽度算列数，每张卡片放进普通 ``Row`` 的 ``expand`` 格里
+    （**不是** ``wrap=True`` 的 Wrap —— Expanded 放进 Wrap 会直接白屏），
+    末尾补齐透明占位格，保证所有行等宽铺满。宽度由 Flutter 约束实时决定，
+    窗口拉伸时不需要重建页面；只有「列数」变化才由 Router.reflow 重建。
     """
-    avail = page_width(page) - 2 * T.PADDING
+    if not cards:
+        return ft.Column([], spacing=spacing)
+    avail = page_width(page, fallback=responsive.FALLBACK_WIDTH) - 2 * T.PADDING
     if avail <= 0:
-        avail = 800                       # 取不到宽度时的兜底（约等于窄桌面）
+        avail = responsive.FALLBACK_WIDTH - 2 * T.PADDING
     cols = max(1, min(max_cols,
                      int((avail + spacing) // (ideal_w + spacing))))
-    cw = (avail - (cols - 1) * spacing) / cols
-    cw = max(min_w, cw)
+    # 一行塞不下 min_w 的卡片就退化成单列（窄屏 / 手机竖屏）
+    if (avail - (cols - 1) * spacing) / cols < min_w:
+        cols = 1
     rows: list[ft.Control] = []
     for i in range(0, len(cards), cols):
         chunk = cards[i:i + cols]
+        cells: list[ft.Control] = []
         for c in chunk:
-            c.width = int(cw)
-        rows.append(ft.Row(list(chunk), spacing=spacing))
+            # 清掉 ui.card / menu_card 的写死宽度，交给 Expanded 的紧约束决定
+            try:
+                c.width = None
+            except Exception:                   # noqa: BLE001
+                pass
+            cells.append(ft.Container(content=c, expand=True))
+        # 最后一行不足 cols 张时补占位，卡片不会被拉成畸形的大宽块
+        for _ in range(cols - len(chunk)):
+            cells.append(ft.Container(expand=True))
+        rows.append(ft.Row(cells, spacing=spacing))
     return ft.Column(rows, spacing=spacing)
 
 

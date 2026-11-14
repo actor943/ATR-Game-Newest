@@ -37,10 +37,10 @@ from typing import List, Optional, Tuple
 
 import flet as ft
 
+from core import responsive
 from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
-from core.ui_common import page_width
 
 from .engine import (
     COLOR_BODY, COLOR_BOARD, COLOR_FOOD, COLOR_GRID, COLOR_HEAD,
@@ -49,7 +49,8 @@ from .engine import (
 from .views_layout import LayoutMixin
 from .views_pad import TouchPad
 
-CELL_MAX = 22          # 格子最大边长（宽屏）
+CELL_MAX = 22          # 窄屏（手机竖屏）格子边长上限
+CELL_WIDE_MAX = 36     # 宽屏放大上限：20×20 棋盘最大 720×720
 CELL_MIN = 11          # 格子最小边长（手机）
 NARROW_W = 620         # 小于这个宽度按「手机竖屏」处理
 
@@ -109,21 +110,21 @@ class _PlayPage(LayoutMixin):
     # ---------- 布局 ----------
 
     def _layout(self) -> None:
-        w = page_width(self.page, fallback=420.0)
-        try:
-            h = float(getattr(self.page, "height", None) or 720.0)
-        except Exception:                   # noqa: BLE001
-            h = 720.0
+        """按屏幕宽高决定格子大小（宽屏放大、窄屏缩小）。"""
+        w, h = responsive.size(self.page)
         plat = str(getattr(self.page, "platform", "") or "").lower()
         self._touch = (w < NARROW_W) or plat in ("android", "ios")
         if self._touch:
             # 手机竖屏：扣掉标题栏、信息条、操作键和留白
             avail_w = w - 32.0
             avail_h = h - 56.0 - 64.0 - 150.0 - 24.0
-            cell = min(avail_w / COLS, avail_h / ROWS)
-            self.cell = max(CELL_MIN, min(CELL_MAX, cell))
         else:
-            self.cell = CELL_MAX
+            # 宽屏：棋盘 + 右侧信息栏，按剩余宽高一起算
+            avail_w = w - 32.0 - 16.0 - 200.0
+            avail_h = h - 56.0 - 32.0 - 20.0
+        cell = min(avail_w / COLS, avail_h / ROWS)
+        cap = CELL_MAX if self._touch else CELL_WIDE_MAX
+        self.cell = max(CELL_MIN, min(cap, cell))
 
     def _apply_cell_size(self) -> None:
         for row in self._grid:
@@ -278,17 +279,15 @@ class _PlayPage(LayoutMixin):
     def _attach(self):
         self._prev_keyboard = self.page.on_keyboard_event
         self.page.on_keyboard_event = self._on_key
-        try:
-            self._prev_resize = self.page.on_resize
-            self.page.on_resize = self._on_resize
-        except Exception:                   # noqa: BLE001
-            self._prev_resize = None
+        # 走全局 resize 分发器，不覆盖框架 / 其它页面的回调
+        responsive.subscribe(self.page, "snake.play", self._on_resize)
         try:
             self._task = self.page.run_task(self._loop)
         except Exception:                   # noqa: BLE001
             self._task = None
 
-    def _on_resize(self, e):
+    def _on_resize(self, *_args):
+        """屏幕尺寸变了：重算格子边长（兼容事件对象与 (w, h) 两种签名）。"""
         self._layout()
         self._apply_cell_size()
         self._refresh()
@@ -304,10 +303,7 @@ class _PlayPage(LayoutMixin):
             self.page.on_keyboard_event = self._prev_keyboard
         except Exception:  # noqa: BLE001
             pass
-        try:
-            self.page.on_resize = self._prev_resize
-        except Exception:                   # noqa: BLE001
-            pass
+        responsive.unsubscribe(self.page, "snake.play", self._on_resize)
         self.pad.detach()
 
     def _restart(self):

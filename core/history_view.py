@@ -15,6 +15,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 import flet as ft
 
 from core import history
+from core import responsive
 from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
@@ -114,7 +115,12 @@ class HistoryPage:
         self.title = title
         self.back_route = back_route
         self.summary_fn = summary_fn
-        self.list_height = list_height
+        # 列表高度按窗口高度放大：大屏上详情区不必挤在 230px 的小框里。
+        # 传入 list_height 的游戏页仍以它的值为下限。
+        self.list_height = int(max(
+            list_height,
+            min(520.0, responsive.page_height(page) * 0.38),
+        ))
         self.max_files = max_files
         # all_games=True：把**所有游戏**的记录汇到一张表里（主菜单用）
         self.all_games = all_games

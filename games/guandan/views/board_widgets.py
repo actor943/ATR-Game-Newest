@@ -22,34 +22,36 @@ class CardButton(ft.Container):
     """单张牌按钮（同一花色点数有两张，用 copy_index 区分）"""
 
     def __init__(self, rank: str, suit: str, copy_index: int,
-                 on_toggle, played: bool = False, is_wild: bool = False):
+                 on_toggle, played: bool = False, is_wild: bool = False,
+                 zoom: float = 1.0):
 
-        """建好这张牌按钮：底色、点数、点击回调。"""
+        """建好这张牌按钮：底色、点数、点击回调；``zoom`` 让宽屏铺开。"""
         self.rank = rank
         self.suit = suit
         self.copy_index = copy_index
         self._on_toggle = on_toggle
         self._played = played
         self._is_wild = is_wild
+        self._zoom = zoom
 
         color = SUIT_COLORS[suit]
         bg = self._get_bg(played, is_wild)
 
         self.top_text = ft.Text(
             suit if played else rank,
-            size=14 if played else 13,
+            size=(14 if played else 13) * zoom,
             color=color,
             weight=ft.FontWeight.BOLD,
         )
         bottom_label = "赖子" if is_wild else SUIT_NAMES[suit]
         self.suit_label = ft.Text(
-            bottom_label, size=8,
+            bottom_label, size=8 * zoom,
             color="#D4A017" if is_wild else color,
         )
 
         border_color = "#D4A017" if is_wild else color
         super().__init__(
-            width=T.CARD_W, height=T.CARD_H,
+            width=T.CARD_W * zoom, height=T.CARD_H * zoom,
             bgcolor=bg,
             border=ft.Border.all(1.5 if not is_wild else 2, color=border_color),
             border_radius=6,
@@ -116,20 +118,20 @@ class JokerButton(ft.Container):
     """王牌按钮"""
 
     def __init__(self, name: str, copy_index: int, on_toggle,
-                 played: bool = False):
+                 played: bool = False, zoom: float = 1.0):
 
-        """建好这张牌按钮：底色、点数、点击回调。"""
+        """建好这张牌按钮：底色、点数、点击回调；``zoom`` 让宽屏铺开。"""
         self.name = name
         self.copy_index = copy_index
         self._on_toggle = on_toggle
         self._played = played
 
         self.label = ft.Text(
-            name, size=13, weight=ft.FontWeight.BOLD,
+            name, size=13 * zoom, weight=ft.FontWeight.BOLD,
             color=T.JOKER_TEXT if not played else T.JOKER_TEXT_PLAYED,
         )
         super().__init__(
-            width=T.JOKER_W, height=T.JOKER_H,
+            width=T.JOKER_W * zoom, height=T.JOKER_H * zoom,
             bgcolor=T.CARD_PLAYED if played else T.JOKER_BG,
             border=ft.Border.all(2, color=T.JOKER_BORDER_BIG if name == "大王"
                                         else T.JOKER_BORDER_SMALL),

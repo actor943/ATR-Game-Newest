@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import flet as ft
 
+from core import responsive
 from core.registry import NavigateFn
 from core.theme import T
 from core.ui_common import app_bar
@@ -37,6 +38,9 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     analyzer = GdAnalyzer()
     current_player = 0
+    # 记牌器是 13 行 × 8 张牌的固定网格：宽屏按视口等比放大牌面与行距，
+    # 不再把一整块 600px 的小表格贴在左上角（上限 1.5 倍，牌不至于变形）。
+    zoom = responsive.clamp(responsive.page_width(page) / 1000.0, 1.0, 1.5)
 
     card_buttons: dict[tuple[str, str, int], CardButton] = {}
     joker_buttons: list[JokerButton] = []
@@ -108,7 +112,7 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
             text = level_btn_texts[rank]
             text.color = T.LEVEL_ACTIVE_TEXT if is_active else T.TEXT_MUTED
             text.value = "✓级" if is_active else "设级"
-            text.size = 9 if is_active else 8
+            text.size = (9 if is_active else 8) * zoom
         for (rank, suit, _ci), btn in card_buttons.items():
             btn.set_wild(rank == level and suit == "♥")
         refresh_status()
@@ -219,22 +223,22 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
         # 花色表头
         suit_header_row = ft.Row([
-            ft.Container(width=32),
-            ft.Container(width=28),
+            ft.Container(width=32 * zoom),
+            ft.Container(width=28 * zoom),
         ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         for i, suit in enumerate(SUITS):
             color = SUIT_COLORS[suit]
-            header_width = 80 if i == len(SUITS) - 1 else 86
+            header_width = (80 if i == len(SUITS) - 1 else 86) * zoom
             suit_header = ft.Container(
                 width=header_width,
                 alignment=ft.alignment.Alignment.CENTER,
                 content=ft.Text(
                     f"{suit} {SUIT_NAMES[suit]}",
-                    size=12, color=color, weight=ft.FontWeight.BOLD,
+                    size=12 * zoom, color=color, weight=ft.FontWeight.BOLD,
                 ),
             )
             suit_header_row.controls.append(suit_header)
-        suit_header_row.controls.append(ft.Container(width=36))
+        suit_header_row.controls.append(ft.Container(width=36 * zoom))
         card_grid.controls.append(suit_header_row)
         card_grid.controls.append(ft.Divider(height=1, color=T.DIVIDER))
 
@@ -242,12 +246,12 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
             is_active = (analyzer.level_rank == rank)
             level_text = ft.Text(
                 "✓级" if is_active else "设级",
-                size=9 if is_active else 8,
+                size=(9 if is_active else 8) * zoom,
                 weight=ft.FontWeight.BOLD,
                 color=T.LEVEL_ACTIVE_TEXT if is_active else T.TEXT_MUTED,
             )
             level_btn = ft.Container(
-                width=32, height=24,
+                width=32 * zoom, height=24 * zoom,
                 bgcolor=T.LEVEL_ACTIVE_BG if is_active else T.SURFACE_ALT,
                 border_radius=4,
                 alignment=ft.alignment.Alignment(0, 0),
@@ -258,9 +262,10 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
             level_btn_texts[rank] = level_text
 
             rank_label = ft.Container(
-                content=ft.Text(rank, size=14, weight=ft.FontWeight.BOLD,
+                content=ft.Text(rank, size=14 * zoom, weight=ft.FontWeight.BOLD,
                                 color=T.TEXT_PRIMARY),
-                width=28, alignment=ft.alignment.Alignment.CENTER_RIGHT,
+                width=28 * zoom,
+                alignment=ft.alignment.Alignment.CENTER_RIGHT,
             )
 
             suit_cards: list[ft.Control] = []
@@ -269,16 +274,17 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                 for ci in range(2):
                     btn = CardButton(rank, suit, ci,
                                      on_toggle=on_card_toggle,
-                                     is_wild=(is_wild_suit and suit == "♥"))
+                                     is_wild=(is_wild_suit and suit == "♥"),
+                                     zoom=zoom)
                     card_buttons[(rank, suit, ci)] = btn
                     suit_cards.append(btn)
-                suit_cards.append(ft.Container(width=6))
+                suit_cards.append(ft.Container(width=6 * zoom))
             if suit_cards:
                 suit_cards.pop()
 
             rem_label = ft.Text(
-                f"×{TOTAL_PER_RANK}", size=13,
-                color=T.TEXT_SECONDARY, width=30,
+                f"×{TOTAL_PER_RANK}", size=13 * zoom,
+                color=T.TEXT_SECONDARY, width=30 * zoom,
                 text_align=ft.TextAlign.CENTER,
             )
             rem_labels[rank] = rem_label
@@ -299,10 +305,11 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         ], spacing=6)
         for name in JOKERS:
             for ci in range(2):
-                btn = JokerButton(name, ci, on_toggle=on_joker_toggle)
+                btn = JokerButton(name, ci, on_toggle=on_joker_toggle,
+                                  zoom=zoom)
                 joker_buttons.append(btn)
                 joker_row.controls.append(btn)
-            joker_row.controls.append(ft.Container(width=10))
+            joker_row.controls.append(ft.Container(width=10 * zoom))
         if joker_row.controls and isinstance(joker_row.controls[-1], ft.Container):
             joker_row.controls.pop()
         card_grid.controls.append(joker_row)

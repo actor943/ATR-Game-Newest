@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 import flet as ft
 
@@ -22,13 +22,7 @@ from games.guandan.cards import (
 )
 from games.guandan.views.play_const import (
     BOMB_COLOR,
-    CARD_H,
-    CARD_W,
-    _FALLBACK_WIDTH,
-    HAND_BOX_HEIGHT,
-    HAND_BOX_MAX_HEIGHT,
     HAND_ROW_GAP,
-    HAND_SPACING,
     HEAD_COLOR,
     LEVEL_FOE,
     LEVEL_GOLD,
@@ -36,8 +30,6 @@ from games.guandan.views.play_const import (
     LIFT,
     MUTED,
     NAMES,
-    PLAY_H,
-    PLAY_W,
     TEAM_COLOR,
     WIN_COLOR,
     _is_bomb,
@@ -178,8 +170,8 @@ class PlayTableMixin:
                         ),
                         border_radius=4,
                         content=ft.Image(
-                            src=card_image_src(c), width=PLAY_W,
-                            height=PLAY_H, fit=ft.BoxFit.CONTAIN,
+                            src=card_image_src(c), width=self.m["play_w"],
+                            height=self.m["play_h"], fit=ft.BoxFit.CONTAIN,
                             tooltip=tip,
                         ),
                     )
@@ -200,7 +192,8 @@ class PlayTableMixin:
     # ---------- 我的手牌区 ----------
     def _available_width(self) -> float:
         """手牌区可用宽度（页面宽 − 页面内边距 − 手牌盒内边距与边框）。"""
-        w = page_width(self.page, _FALLBACK_WIDTH)   # 首帧取不到时按手机宽兜底
+        # 首帧取不到尺寸时按普通桌面窗口兜底（旧版兜底 420 会把宽屏画成手机）
+        w = page_width(self.page, 900.0)
         return max(200.0, w - 2 * T.PADDING - 22)
 
     def _hand_layout(self, cards: List[Card]):
@@ -211,10 +204,10 @@ class PlayTableMixin:
         保证 27 张一张都不被挤掉，不用横向拖着找牌。
         """
         if not cards:
-            return [], CARD_W, CARD_H, HAND_SPACING
+            return [], self.m["card_w"], self.m["card_h"], self.m["spacing"]
         cw, ch, sp, per_row, rows = fit_card_row(
             self._available_width(), len(cards),
-            CARD_W, CARD_H, HAND_SPACING)
+            self.m["card_w"], self.m["card_h"], self.m["spacing"])
         if rows <= 1:
             return [cards], cw, ch, sp
         # 均衡分行：避免「13+13+1」这种最后一行只有一两张的排布
@@ -222,17 +215,21 @@ class PlayTableMixin:
         return ([cards[i:i + per] for i in range(0, len(cards), per)],
                 cw, ch, sp)
 
-    def _hand_box_height(self, rows: int, card_h: int = CARD_H) -> float:
-        """手牌盒高度随行数增长，上限 HAND_BOX_MAX_HEIGHT（超了内部滚动）。"""
+    def _hand_box_height(self, rows: int, card_h: int = 58) -> float:
+        """手牌盒高度随行数增长，上限按视口放大（超了内部滚动）。"""
         need = 20 + rows * (card_h + HAND_ROW_GAP) + 46  # 内边距+牌行+说明行
-        return float(min(HAND_BOX_MAX_HEIGHT, max(HAND_BOX_HEIGHT, need)))
+        return float(min(self.m["hand_box_max"],
+                         max(self.m["hand_box"], need)))
 
     def _card_widget(self, c: Card, mine_turn: bool,
-                     w: int = CARD_W, h: int = CARD_H) -> ft.Control:
-        """单张手牌：选中抬升 + 级牌/逢人配描边（窄屏时 w/h 会被缩小）。
+                     w: Optional[int] = None,
+                     h: Optional[int] = None) -> ft.Control:
+        """单张手牌：选中抬升 + 级牌/逢人配描边（宽屏放大 / 窄屏缩小）。
 
         本轮进贡**得来**的牌另加金框与「贡」标注，方便一眼看出哪张是别人给的。
         """
+        w = self.m["card_w"] if w is None else w
+        h = self.m["card_h"] if h is None else h
         ctx = self.hand.ctx
         sel = c in self.selected
         is_gift = c in self.gift_marks
@@ -279,7 +276,7 @@ class PlayTableMixin:
                 ft.Text("出牌记录见下方「近期事件」", size=11, color=MUTED),
             ]
             if self.hand_box is not None:
-                self.hand_box.height = HAND_BOX_HEIGHT
+                self.hand_box.height = self.m["hand_box"]
             return
         if self._tribute_active():
             # 进贡阶段：手牌区改成进贡面板（先发牌再进贡，用的是这一手的牌）
@@ -289,7 +286,7 @@ class PlayTableMixin:
                         size=11, color=MUTED),
             ]
             if self.hand_box is not None:
-                self.hand_box.height = HAND_BOX_HEIGHT
+                self.hand_box.height = self.m["hand_box"]
             return
         cards = sort_hand(self.hand.hands[me], ctx)
         mine_turn = (self.hand.turn == me and not self.hand.ended
@@ -298,7 +295,7 @@ class PlayTableMixin:
             rows: List[ft.Control] = [ft.Text("— 已出完 —", size=13,
                                               color=MUTED)]
             if self.hand_box is not None:
-                self.hand_box.height = HAND_BOX_HEIGHT
+                self.hand_box.height = self.m["hand_box"]
         else:
             chunks, cw, ch, sp = self._hand_layout(cards)
             rows = [

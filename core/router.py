@@ -9,6 +9,7 @@ from typing import Optional
 import flet as ft
 
 from . import registry
+from . import responsive
 from .registry import RouteSpec
 
 
@@ -81,6 +82,9 @@ class Router:
 
     def _swap(self, control: ft.Control, path: str) -> None:
         try:
+            # 视图根 Column 默认只给子控件「固有宽度」：顶栏、卡片列都缩在
+            # 屏幕左侧。统一在这里改成 STRETCH，所有页面一行不用改就铺满。
+            responsive.stretch_root(control)
             self.page.controls.clear()
             self.page.add(control)
             self._current_path = path
@@ -88,6 +92,20 @@ class Router:
         except Exception:                     # noqa: BLE001
             # 控件本身有问题（渲染期异常）也不能让整app 崩掉
             traceback.print_exc()
+
+    def reflow(self, is_safe) -> None:
+        """窗口尺寸变了：只重建「无状态」的缓存页，绝不打断正在玩的对局。
+
+        ``is_safe(path)`` 由 :func:`core.responsive.is_static_route` 提供。
+        对局页 / 房间页的缓存保留原样（它们自己订阅 resize 原地改尺寸）；
+        当前正好停在静态页时，丢掉缓存立刻重建，卡片列数跟着新宽度走。
+        """
+        for path in list(self._cache):
+            if is_safe(path):
+                self._cache.pop(path, None)
+        path = self._current_path
+        if path and is_safe(path):
+            self.navigate(path)
 
     def invalidate(self, path: Optional[str] = None) -> None:
         """强制重建某个（或全部）缓存视图。"""

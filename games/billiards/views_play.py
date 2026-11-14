@@ -32,6 +32,7 @@ from typing import Optional, Tuple
 import flet as ft
 
 from core import registry
+from core import responsive
 from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
@@ -71,23 +72,25 @@ def _session():
         return None
 
 
-def _table_size(page: ft.Page) -> Tuple[float, float]:
-    """按页面宽度算球桌尺寸（球桌、球、袋口全都等比缩放）。
+# 球桌宽度上限：0.4.10 写死 BASE_W=760，宽屏上球桌永远只占半屏。
+# 物理层 Table.scale 会把球半径 / 袋口 / 速度与摩擦一起等比缩放，
+# 所以放大桌面不会改变玩法比例，只是画面铺满。
+TABLE_MAX_W = 1200.0
 
-    宽屏时右侧留一条信息栏；窄屏（手机）时信息栏换到下面。
+
+def _table_size(page: ft.Page) -> Tuple[float, float]:
+    """按页面**宽高一起**算球桌尺寸（球桌、球、袋口全都等比缩放）。
+
+    宽屏时右侧留一条信息栏、下方留角度转盘 / 力度条；窄屏（手机）时
+    信息栏与控制器换到下面。高度上限保证「球桌 + 控制器」都在屏幕里。
     """
-    avail = 0.0
-    try:
-        if page.width:
-            avail = float(page.width) - 32.0
-    except Exception:                       # noqa: BLE001
-        avail = 0.0
-    if avail <= 0:
-        avail = BASE_W
-    if avail >= 660:
-        table_w = min(BASE_W, avail - 210)     # 留出右侧信息栏
-    else:
-        table_w = min(BASE_W, avail)
+    w, h = responsive.size(page)
+    pad = 2 * getattr(T, "PADDING", 16)
+    avail_w = max(280.0, w - pad - 16.0)
+    avail_h = max(220.0, h - 56.0 - pad - 230.0)
+    if avail_w >= 660.0 + 210.0:
+        avail_w -= 210.0                   # 留出右侧信息栏
+    table_w = min(avail_w, avail_h * BASE_W / BASE_H, TABLE_MAX_W)
     table_w = max(280.0, table_w)
     return table_w, table_w * BASE_H / BASE_W
 

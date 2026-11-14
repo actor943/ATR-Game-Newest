@@ -60,12 +60,11 @@ from games.guandan.engine import Hand, MatchState, new_match
 from games.guandan.views.play_actions import PlayActionsMixin
 from games.guandan.views.play_ai import PlayAiMixin
 from games.guandan.views.play_const import (
-    EVENTS_HEIGHT,
-    HAND_BOX_HEIGHT,
     HAND_ROW_GAP,
     HEAD_COLOR,
     MAX_EVENTS,
     MUTED,
+    table_metrics,
 )
 from games.guandan.views.play_flow import PlayFlowMixin
 from games.guandan.views.play_net import PlayNetMixin
@@ -78,6 +77,8 @@ class _Play(PlayNetMixin, PlayAiMixin, PlayActionsMixin,
     def __init__(self, page: ft.Page, navigate: NavigateFn):
         self.page = page
         self.navigate = navigate
+        # 牌面 / 手牌盒 / 事件区尺寸：宽屏放大、手机保持原尺寸
+        self.m = table_metrics(page)
         self.cfg: cfgmod.MatchConfig = cfgmod.active()
 
         # ---- 联机房间开起来的对局 ----
@@ -160,7 +161,7 @@ class _Play(PlayNetMixin, PlayAiMixin, PlayActionsMixin,
     def build(self) -> ft.Control:
         events_box = ft.Container(
             content=self.events_inner,
-            height=EVENTS_HEIGHT,
+            height=self.m["events"],
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
             opacity=1.0, animate_opacity=0, animate_size=0,
         )
@@ -210,7 +211,7 @@ class _Play(PlayNetMixin, PlayAiMixin, PlayActionsMixin,
             border=ft.Border.all(1, T.BORDER),
             border_radius=8,
             padding=ft.Padding.symmetric(horizontal=10, vertical=8),
-            height=HAND_BOX_HEIGHT,
+            height=self.m["hand_box"],
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
             content=self.my_hand_col,
         )
@@ -321,7 +322,7 @@ class _Play(PlayNetMixin, PlayAiMixin, PlayActionsMixin,
         self.my_hand_col.controls = [
             ft.Text("正在与房主同步局面…", size=13, color=MUTED)]
         if self.hand_box is not None:
-            self.hand_box.height = HAND_BOX_HEIGHT
+            self.hand_box.height = self.m["hand_box"]
         self.result_box.visible = False
         self.play_btn.disabled = True
         self.pass_btn.disabled = True

@@ -48,8 +48,47 @@ jobs:
           pip install -r requirements.txt
           python -c "import flet, flet_cli; print('flet build runtime:', flet.__version__)"
 
-      - name: Build ${{ matrix.target }}
+      # 桌面包不走 serious_python 的 Android native 分发包下载，保持单次构建。
+      - name: Build ${{ matrix.target }}（桌面）
+        if: matrix.target != 'apk'
         run: flet build ${{ matrix.target }} --yes --no-rich-output
+
+      # 0.4.10：修复 CI 上 apk 挂在
+      #   :serious_python_android:downloadDistArchive_x86_64 —— 该任务用
+      #   gradle-download-task 的 useETag("all") 把 ETag 写进 etags.json，下载中断或
+      #   多个 ABI 任务并发写同一个 JSON 会把它写成一块全 0 的坏文件，Gson 读它时
+      #   报 "Unable to determine the current character...int value of 0"，
+      #   assembleRelease 直接失败，build/apk 一个产物都没有。
+      #   --arch 只决定 Flutter 打包哪些 ABI（插件自己的运行时分发包仍按
+      #   python_versions.properties 全量下载），所以真正兜底的是三件事：
+      #     1) job 私有、每次清空的 FLET_CACHE_DIR（Gradle 子进程会继承）；
+      #     2) 串行化 Gradle worker，避免并发写坏 etags.json；
+      #     3) 失败后清掉坏缓存重试，最多 3 次。
+      #   --build-number 让 versionCode 随每次运行递增，配合 pyproject.toml 的
+      #   version = 0.4.10，覆盖安装才会被识别成新版本。
+      #   如需 x86_64 模拟器，把 x86_64 加回 --arch 即可。
+      - name: Build apk（隔离缓存 / 串行下载 / 失败重试）
+        if: matrix.target == 'apk'
+        shell: bash
+        env:
+          FLET_CACHE_DIR: ${{ runner.temp }}/flet-cache
+          GRADLE_OPTS: "-Dorg.gradle.workers.max=1 -Dorg.gradle.parallel=false"
+        run: |
+          set -o pipefail
+          rm -rf "$FLET_CACHE_DIR" "$HOME/.flet/cache/python-build" "$HOME/.flet/cache/dart-bridge"
+
+          for attempt in 1 2 3; do
+            if flet build apk \
+                 --arch arm64-v8a armeabi-v7a \
+                 --build-number "${{ github.run_number }}" \
+                 --yes --no-rich-output; then
+              exit 0
+            fi
+            echo "::warning::apk 第 ${attempt} 次构建失败，清理损坏的下载缓存后重试"
+            rm -rf "$FLET_CACHE_DIR/python-build" "$FLET_CACHE_DIR/dart-bridge"
+            find . "$HOME/.gradle" "$HOME/.flet" -name etags.json -type f -delete 2>/dev/null || true
+          done
+          exit 1
       # 0.4.8 实测事故的回归护栏：语音库（numpy / sounddevice）曾经只写在
       # requirements.txt 里，而那个文件**不进安装包** —— 结果源码运行能开麦、
       # 分发版提示「没有语音库」。flet build 装进 bundle 的只有 pyproject.toml 的

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import List, Optional
 
+from core import responsive
+
 from games.guandan.cards import TEAM_LABELS, Card, is_wild, wild_owner
 from games.guandan.engine import NUM_PLAYERS, TributePlan
 from games.guandan.rules import ComboType
@@ -72,6 +74,37 @@ _LOG_COLOR_KEYS = {v: k for k, v in _LOG_COLORS.items()}
 HAND_ROW_GAP = 4              # 换行后的行间距
 HAND_BOX_MAX_HEIGHT = 300     # 手牌区最大高度
 _FALLBACK_WIDTH = 420.0       # 拿不到页面宽度时按手机宽度兜底
+
+# ---- 宽屏放大（0.4.11）----
+# 原来牌面、手牌盒、事件区都是写死的 42×58 / 150 / 180：全屏 1920×1080
+# 时整张牌桌只占中间一小条。按视口尺寸线性放大牌面，并按高度拉长事件区。
+CARD_SCALE_MAX = 1.4
+
+
+def table_metrics(page) -> dict:
+    """按当前视口宽高算牌桌的显示尺寸（只放大，不缩小窄屏）。
+
+    返回一张字典，由 ``_Play.m`` 持有；牌桌的各个 mixin 都从它取尺寸，
+    不再直接引用上面的固定常量，这样宽屏 / 手机各取所需。
+    """
+    w = responsive.page_width(page)
+    h = responsive.page_height(page)
+    k = responsive.clamp(w / 1100.0, 1.0, CARD_SCALE_MAX)
+    box_k = 0.5 + 0.5 * k                 # 盒子高度比牌面放大得克制一些
+    return {
+        "card_w": int(round(CARD_W * k)),
+        "card_h": int(round(CARD_H * k)),
+        "play_w": int(round(PLAY_W * k)),
+        "play_h": int(round(PLAY_H * k)),
+        "spacing": int(round(HAND_SPACING * k)),
+        "hand_box": int(round(HAND_BOX_HEIGHT * box_k)),
+        "hand_box_max": int(round(HAND_BOX_MAX_HEIGHT * box_k)),
+        # 事件区吃掉宽屏多出来的高度（上限 420）；窄屏保持原高度，
+        # 免得手机上把出牌按钮顶到屏幕外。
+        "events": (EVENTS_HEIGHT if w < 700 else
+                   int(max(EVENTS_HEIGHT,
+                           min(420.0, h - 56.0 - 2 * 16 - 430.0)))),
+    }
 
 
 def _is_bomb(combo) -> bool:

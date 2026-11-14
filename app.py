@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
+
 import flet as ft
 
 # 触发游戏插件的注册（import 即注册）
@@ -10,6 +13,7 @@ import games  # noqa: F401
 
 from core import i18n
 from core import registry
+from core import responsive
 from core import theme
 from core import ui_theme
 from core.router import Router
@@ -59,7 +63,11 @@ def run(page: ft.Page) -> None:
     """主入口。``ft.run(run)`` 启动后会调用本函数。"""
     page.title = APP_NAME
     page.padding = 0
+    page.spacing = 0
     page.scroll = ft.ScrollMode.AUTO
+    # 根视图默认 CrossAxisAlignment.START：每个页面只拿到「内容固有宽度」，
+    # 顶栏和卡片列都缩在左边。STRETCH 会把整屏宽度交给每一个视图。
+    page.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
 
     # 应用持久化的主题与窗口模式（设置页切换后写回 settings.json）
     settings = Settings.load()
@@ -74,4 +82,29 @@ def run(page: ft.Page) -> None:
     _register_core_routes()
 
     router = Router(page)
+
+    # ---- 窗口尺寸变化：防抖重排「静态页」，对局页走自己的订阅回调 ----
+    # 拖动窗口时 on_resize 每帧都来，不能每帧重建整棵控件树；用世代计数
+    # 做 180ms 防抖，停下才重排一次。Router.reflow 只重建菜单/设置这类
+    # 无状态页，牌桌 / 棋盘 / 房间绝不会被顶掉（游戏状态不丢）。
+    _reflow = {"gen": 0, "w": 0.0, "at": 0.0}
+
+    async def _debounced_reflow(gen: int) -> None:
+        await asyncio.sleep(0.18)
+        if gen != _reflow["gen"]:
+            return
+        router.reflow(responsive.is_static_route)
+
+    def _on_viewport_change(w: float, _h: float) -> None:
+        if abs(w - _reflow["w"]) < 24 and time.monotonic() - _reflow["at"] < 2.0:
+            return                         # 只是高度变了 / 几像素的抖动
+        _reflow["w"] = w
+        _reflow["at"] = time.monotonic()
+        _reflow["gen"] += 1
+        try:
+            page.run_task(_debounced_reflow, _reflow["gen"])
+        except Exception:                   # noqa: BLE001 — 测试桩没有事件循环
+            router.reflow(responsive.is_static_route)
+
+    responsive.install(page, _on_viewport_change)
     router.navigate("/")
