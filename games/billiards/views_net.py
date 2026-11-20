@@ -7,17 +7,28 @@
 联机模型
 --------
 * **房主权威**：只有房主判规则（换手 / 犯规 / 胜负）。
-* **击球只传方向 + 力度**：手机和电脑的球桌尺寸不同，绝对速度没有
-  可比性；方向和力度（0~1）两端都能换算成自己的速度。
+* **击球只传方向 + 力度 + 击球点**：手机和电脑的球桌尺寸不同，绝对速度
+  没有可比性；方向、力度（0~1）与高低杆 / 加塞（各 -1~1，无量纲）两端
+  都能换算成自己的物理，杆法不会因屏幕大小而变味。
 * **两端各跑各的物理**：动画才顺滑；一杆结束后房主广播整局快照，
   所有人按快照对齐，最终状态一定一致。
 """
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Tuple
 
 from .engine import BilliardsEngine, PHASE_AIM, PHASE_SHOOT
+from .physics import clamp_tip
+
+
+def _tip_of(data: dict) -> Tuple[float, float]:
+    """从玩法包里安全取出击球点（缺省 = 中杆；脏数据一律落回中杆）。
+
+    老版本客户端不带这两个字段，缺字段时自动当中杆，物理不会发散。
+    ``clamp_tip`` 同时挡掉 NaN / Inf / 字符串 / 越界组合。
+    """
+    return clamp_tip(data.get("top", 0.0), data.get("side", 0.0))
 
 
 class PlayNetMixin:
@@ -88,27 +99,31 @@ class PlayNetMixin:
     # 击球
     # ============================================================
 
-    def _shoot(self, dx: float, dy: float, power: float) -> None:
-        """本机玩家出了一杆。"""
+    def _shoot(self, dx: float, dy: float, power: float,
+               top: float = 0.0, side: float = 0.0) -> None:
+        """本机玩家出了一杆（带上选好的高低杆 / 加塞）。"""
         if self.engine.is_over() or self.engine.phase != PHASE_AIM:
             return
+        a, s = clamp_tip(top, side)
         if self.net is not None:
             if self._my_index() != self.engine.turn:
                 return                      # 不是自己的回合
             if self.net.is_host:
-                if self._apply_shot(dx, dy, power):
+                if self._apply_shot(dx, dy, power, a, s):
                     self._broadcast({"k": "shot", "dir": [dx, dy],
-                                     "power": power})
+                                     "power": power, "top": a, "side": s})
             else:
                 # 客人：把请求交给房主，房主校验后才算数
                 self._send_to_host({"k": "req_shoot", "dir": [dx, dy],
-                                    "power": power, "from": self._my_mid()})
+                                    "power": power, "top": a, "side": s,
+                                    "from": self._my_mid()})
             return
-        self._apply_shot(dx, dy, power)
+        self._apply_shot(dx, dy, power, a, s)
 
-    def _apply_shot(self, dx: float, dy: float, power: float) -> bool:
-        """真的给母球一个初速度（本地物理开始跑）。"""
-        ok = self.engine.shoot(dx, dy, power)
+    def _apply_shot(self, dx: float, dy: float, power: float,
+                    top: float = 0.0, side: float = 0.0) -> bool:
+        """真的给母球初速度和旋量（本地物理开始跑）。"""
+        ok = self.engine.shoot(dx, dy, power, top, side)
         if ok:
             self.table_view.clear_aim()
             self._render_side()
@@ -158,8 +173,9 @@ class PlayNetMixin:
             if self.engine.phase != PHASE_AIM:
                 return
             dirv = data.get("dir") or [1.0, 0.0]
+            a, s = _tip_of(data)
             self._apply_shot(float(dirv[0]), float(dirv[1]),
-                             float(data.get("power", 0.5)))
+                             float(data.get("power", 0.5)), a, s)
         elif k == "req_shoot":
             self._host_shoot(data)
         elif k == "state":
@@ -193,9 +209,11 @@ class PlayNetMixin:
         dirv = data.get("dir") or [1.0, 0.0]
         dx, dy = float(dirv[0]), float(dirv[1])
         power = float(data.get("power", 0.5))
-        if not self._apply_shot(dx, dy, power):
+        a, s = _tip_of(data)
+        if not self._apply_shot(dx, dy, power, a, s):
             return
-        self._broadcast({"k": "shot", "dir": [dx, dy], "power": power})
+        self._broadcast({"k": "shot", "dir": [dx, dy], "power": power,
+                         "top": a, "side": s})
 
     def _host_place(self, data: dict) -> None:
         """房主收到客人的摆球请求：校验后落定并广播。"""

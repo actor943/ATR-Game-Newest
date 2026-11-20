@@ -36,17 +36,18 @@ from core import responsive
 from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
-from core.ui_common import app_bar, page_padding
+from core.ui_common import app_bar, page_padding, tap_button
 
 from .engine import (
     BilliardsEngine, FOUL_EIGHT_EARLY, FOUL_NO_CONTACT, FOUL_SCRATCH,
     FOUL_WRONG_BALL, FOUL_WRONG_FIRST, GROUP_SOLID, GROUP_STRIPE,
     PHASE_OVER, PHASE_SHOOT,
 )
+from .assets import TABLE_GREEN, TABLE_IMAGE_SIZE
 from .physics import (
-    BASE_H, BASE_W, FORCE_MAX_N, force_to_power, power_to_force,
+    BASE_H, BASE_W, FORCE_MAX_N, clamp_tip, force_to_power, power_to_force,
 )
-from .views_controls import AngleDial, PowerBar
+from .views_controls import AngleDial, PowerBar, SpinDial
 from .views_gesture import PlayGestureMixin
 from .views_net import PlayNetMixin
 from .views_table import TableView
@@ -77,21 +78,57 @@ def _session():
 # 所以放大桌面不会改变玩法比例，只是画面铺满。
 TABLE_MAX_W = 1200.0
 
+# 宽屏（Mac 全屏 / 大显示器）：球桌 | 对局信息 | 出杆与发球，三列横向同排
+WIDE_MIN_W = 1180.0
+SIDE_W = 190.0
+CONTROLS_W = 330.0
+COL_GAP = 14.0
+# 额外留白：宽屏 Row 不 wrap，宽度必须留余量，否则一行放不下就会溢出。
+WIDE_SAFE = 32.0
+
+# 球桌控件比物理台面大一圈（木质库边 + 袋口，见 views_table.build）：
+# 贴图 1200×678、绿色台面 1087×565。算尺寸时必须把这一圈除掉，
+# 否则手机上球桌右边会被裁掉、宽屏上三列会被挤出屏幕。
+RAIL_W = TABLE_IMAGE_SIZE[0] / TABLE_GREEN[2]   # ≈1.104
+RAIL_H = TABLE_IMAGE_SIZE[1] / TABLE_GREEN[3]   # ≈1.200
+
+
+def _wide_layout(page: ft.Page) -> bool:
+    """宽度够、且不是手机时，才把控制区挪到球桌右侧。"""
+    w, _h = responsive.size(page)
+    plat = str(getattr(page, "platform", "") or "").lower()
+    return w >= WIDE_MIN_W and plat not in ("android", "ios")
+
 
 def _table_size(page: ft.Page) -> Tuple[float, float]:
     """按页面**宽高一起**算球桌尺寸（球桌、球、袋口全都等比缩放）。
 
-    宽屏时右侧留一条信息栏、下方留角度转盘 / 力度条；窄屏（手机）时
-    信息栏与控制器换到下面。高度上限保证「球桌 + 控制器」都在屏幕里。
+    * **宽屏**：球桌、信息栏、出杆 / 发球三列**横向同排**，右侧两列的
+      宽度（``SIDE_W + CONTROLS_W``）连同留白一起从可用宽度里扣掉；
+      控制区不再占下方一整行，高度里也不再预留 230px。用户明确要求
+      「页面整体优先」，所以不为了保住球桌面积而把内容竖着堆到下面；
+    * **其它尺寸**：沿用「球桌 + 右侧信息栏 / 下方控制区」的布局。
+
+    ``avail_w/avail_h`` 是**控件**能占的空间，而物理台面只是贴图中间的
+    绿色区 —— 球桌控件还要多出 ``RAIL_W/RAIL_H`` 倍的木质库边，所以先
+    除掉这一圈再算台面宽高，免得手机上右边被裁、宽屏上三列溢出。
     """
     w, h = responsive.size(page)
     pad = 2 * getattr(T, "PADDING", 16)
-    avail_w = max(280.0, w - pad - 16.0)
-    avail_h = max(220.0, h - 56.0 - pad - 230.0)
-    if avail_w >= 660.0 + 210.0:
-        avail_w -= 210.0                   # 留出右侧信息栏
-    table_w = min(avail_w, avail_h * BASE_W / BASE_H, TABLE_MAX_W)
-    table_w = max(280.0, table_w)
+    if _wide_layout(page):
+        avail_w = max(280.0, w - pad - 16.0 - SIDE_W - CONTROLS_W
+                      - 2 * COL_GAP - WIDE_SAFE)
+        avail_h = max(220.0, h - 56.0 - pad - 24.0)
+    else:
+        avail_w = max(280.0, w - pad - 16.0)
+        # 控制区现在是三行（转盘/力度/击球点 + 读数/按钮 + 杆法快捷键）
+        avail_h = max(220.0, h - 56.0 - pad - 290.0)
+        if avail_w >= 660.0 + 210.0:
+            avail_w -= 210.0               # 留出右侧信息栏
+    table_w = min(avail_w / RAIL_W,
+                  (avail_h / RAIL_H) * BASE_W / BASE_H,
+                  TABLE_MAX_W)
+    table_w = max(200.0, table_w)     # 下限别反过来把库边顶出屏幕
     return table_w, table_w * BASE_H / BASE_W
 
 
@@ -131,18 +168,43 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
             content=self.power_fill,
         )
 
-        # ----- 外接控制器：角度转盘 + 力度条（牛顿）-----
+        # ----- 外接控制器：角度转盘 + 力度条 + 击球点圆盘 -----
         # 手机端不用去戳白球也能精准瞄准；桌面端作为「拉弓」之外的补充。
         self._aim_angle = 0.0                   # 弧度，y 轴向下
-        self._force_n = 30.0                    # 当前力度（牛顿）
-        self.dial = AngleDial(size=130.0,
+        self._force_n = power_to_force(0.4)     # 默认 40% 力度（80 / 200 牛）
+        self._top = 0.0                         # 高低杆：-1 低杆 ~ +1 高杆
+        self._side = 0.0                        # 加塞：-1 左塞 ~ +1 右塞
+        self.dial = AngleDial(size=110.0,
                               on_change=self._on_dial_change)
-        self.powerbar = PowerBar(width=46.0, height=170.0, max_n=FORCE_MAX_N,
+        self.powerbar = PowerBar(width=40.0, height=132.0, max_n=FORCE_MAX_N,
                                  on_change=self._on_power_change)
+        self.spin_dial = SpinDial(size=110.0,
+                                  on_change=self._on_spin_change)
         self.force_text = ft.Text("", size=13, color=T.TEXT_PRIMARY,
                                   weight=ft.FontWeight.BOLD)
         self.angle_text = ft.Text("", size=11, color=T.TEXT_SECONDARY)
-        self.control_hint = ft.Text("", size=11, color=T.TEXT_MUTED)
+        self.spin_text = ft.Text("", size=11, color=T.ACCENT,
+                                 weight=ft.FontWeight.BOLD,
+                                 text_align=ft.TextAlign.CENTER)
+        self.control_hint = ft.Text("", size=11, color=T.TEXT_MUTED,
+                                    text_align=ft.TextAlign.CENTER)
+        # 力度数值输入：0~200 牛，和力度条双向同步（敲数字就能精确出力）
+        self.force_input = ft.TextField(
+            value=f"{self._force_n:.0f}",
+            width=88, height=36, text_size=13,
+            keyboard_type=ft.KeyboardType.NUMBER,
+            input_filter=ft.NumbersOnlyInputFilter(),
+            text_align=ft.TextAlign.CENTER,
+            hint_text=f"0-{int(FORCE_MAX_N)}",
+            content_padding=ft.Padding.symmetric(horizontal=6, vertical=4),
+            on_change=self._on_force_typed,
+            on_submit=self._on_force_typed,
+        )
+        # 宽 / 窄布局切换：只换外层容器，复用球桌、信息栏、控制器，
+        # resize 时不会重建棋局 / 球 / 输入内容
+        self._panels = None
+        self._wide_mode = None
+        self._layout_host = None
 
     # ============================================================
     # 主循环
@@ -279,29 +341,103 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
         self.page.update()
 
     def _on_power_change(self, force_n: float) -> None:
-        """力度条拖了：刷新力度数值与瞄准线长度。"""
+        """力度条拖了：刷新力度数值与瞄准线长度，并同步输入框。"""
         self._force_n = float(force_n)
+        self.force_input.value = f"{self._force_n:.0f}"
         self._render_power(force_to_power(self._force_n))
         self._update_aim_preview()
         self._render_controls_text()
         self.page.update()
 
+    def _on_force_typed(self, _e=None) -> None:
+        """输入框敲了力度（0~200 牛）：截断到合法区间，同步力度条与瞄准线。"""
+        raw = (self.force_input.value or "").strip()
+        if not raw:
+            return                          # 清空时不改力度，避免误触出杆
+        try:
+            parsed = float(raw)
+        except (TypeError, ValueError):
+            return
+        n = max(0.0, min(FORCE_MAX_N, parsed))
+        if n != parsed:
+            self.force_input.value = f"{n:.0f}"
+        self._force_n = n
+        self.powerbar.set_force(n)
+        self._render_power(force_to_power(n))
+        self._update_aim_preview()
+        self._render_controls_text()
+        self.page.update()
+
+    # ---------- 杆法：高低杆 / 加塞 ----------
+
+    @staticmethod
+    def _tip_label(top: float, side: float) -> str:
+        """把 (top, side) 说成人话，例如「高杆 · 右塞」。
+
+        静态方法的理由：历史记录里存的是每一杆当时的击球点，不能拿
+        当前 UI 上选中的值去解释。
+        """
+        parts = []
+        if top > 0.15:
+            parts.append(t("billiards.tip_follow"))
+        elif top < -0.15:
+            parts.append(t("billiards.tip_draw"))
+        if side > 0.15:
+            parts.append(t("billiards.tip_right"))
+        elif side < -0.15:
+            parts.append(t("billiards.tip_left"))
+        return " · ".join(parts) if parts else t("billiards.tip_neutral")
+
+    def _spin_label(self) -> str:
+        return self._tip_label(self._top, self._side)
+
+    def _set_spin(self, top: float, side: float) -> None:
+        """程序设定杆法（预设按钮 / 出杆后归中）：同步圆盘、读数、球桌。"""
+        self._top, self._side = clamp_tip(top, side)
+        self.spin_dial.set_spin(self._top, self._side)
+        self._render_controls_text()
+        self._update_aim_preview()
+
+    def _on_spin_change(self, top: float, side: float) -> None:
+        """玩家在击球点圆盘上拖了红点。"""
+        self._top, self._side = clamp_tip(top, side)
+        self._render_controls_text()
+        self._update_aim_preview()
+        self.page.update()
+
+    def _preset_spin(self, top: float, side: float, _e=None) -> None:
+        """快捷杆法按钮：中 / 高 / 低 / 左 / 右。"""
+        self._set_spin(top, side)
+        self.page.update()
+
+    def _reset_spin(self) -> None:
+        """出杆后回到中杆：杆法是每一杆的战术选择，不留到下一杆。"""
+        self._set_spin(0.0, 0.0)
+        self.page.update()
+
     def _update_aim_preview(self) -> None:
-        """把转盘角度 + 力度条，画成球桌上的瞄准线（仅本机可操作时）。"""
+        """把转盘角度 + 力度条 + 杆法画成球桌上的瞄准线。
+
+        瞄准线的颜色随杆法变（中杆白 / 高杆暖 / 低杆冷 / 加塞紫），
+        母球上的小红点给出这杆的走位方向。
+        """
+        dx = math.cos(self._aim_angle)
+        dy = math.sin(self._aim_angle)
+        self.table_view.set_tip(self._top, self._side, dx, dy)
         cue = self.engine.cue
         if cue is None or not self._may_act() or self.engine.ball_in_hand:
             self.table_view.clear_aim()
             return
         power = force_to_power(self._force_n)
-        dx = math.cos(self._aim_angle)
-        dy = math.sin(self._aim_angle)
         self.table_view.set_aim(cue.x, cue.y, dx, dy, power)
 
     def _render_controls_text(self) -> None:
-        """力度（牛）与角度（度）的实时读数。"""
+        """力度（牛）、角度（度）、杆法的实时读数。"""
         self.force_text.value = "{n:.0f} N".format(n=self._force_n)
         deg = math.degrees(self._aim_angle) % 360
         self.angle_text.value = t("billiards.angle_deg", deg=deg)
+        self.spin_text.value = t("billiards.spin_readout",
+                                 v=self._spin_label())
         if not self._may_act():
             self.control_hint.value = t("billiards.hint_wait")
         elif self.engine.ball_in_hand:
@@ -310,7 +446,7 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
             self.control_hint.value = t("billiards.control_hint")
 
     def _shoot_from_controls(self, _e=None) -> None:
-        """按转盘角度 + 力度条出杆（手机端主操作）。"""
+        """按转盘角度 + 力度条 + 击球点出杆（手机端主操作）。"""
         if not self._may_act() or self.engine.ball_in_hand:
             return
         power = force_to_power(self._force_n)
@@ -318,7 +454,8 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
             return
         dx = math.cos(self._aim_angle)
         dy = math.sin(self._aim_angle)
-        self._shoot(dx, dy, power)
+        self._shoot(dx, dy, power, self._top, self._side)
+        self._reset_spin()
 
     def _identity_label(self) -> str:
         """本机身份的一句话。"""
@@ -388,6 +525,13 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
             potted = shot.get("potted") or []
             fouls = shot.get("fouls") or []
             text = f"{i + 1}. {who}"
+            tip = shot.get("tip") or [0.0, 0.0]
+            try:
+                label = self._tip_label(float(tip[0]), float(tip[1]))
+            except (TypeError, ValueError, IndexError):
+                label = t("billiards.tip_neutral")
+            if label != t("billiards.tip_neutral"):
+                text += " 杆法 " + label
             if potted:
                 text += " 进球 " + " ".join(str(n) for n in potted)
             if fouls:
@@ -402,6 +546,48 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
     # ============================================================
     # 组装与生命周期
     # ============================================================
+
+    def _compose(self, wide: bool) -> ft.Control:
+        """把同一批控件排成三列（宽屏）或上下两行（窄屏）。
+
+        宽屏用 ``ft.Row`` 且**不 wrap**：球桌、信息栏、出杆 / 发球必须
+        横向同排，绝不能因为宽度刚好卡住，就把右侧内容换到球桌下面。
+        三列复用同一批控件，切换布局时不重建棋局 / 球 / 输入内容。
+        """
+        table_panel, side, controls = self._panels
+        if wide:
+            return ft.Row(
+                [table_panel, ft.Container(width=COL_GAP), side,
+                 ft.Container(width=COL_GAP),
+                 ft.Container(content=controls, width=CONTROLS_W)],
+                alignment=ft.MainAxisAlignment.CENTER,
+                vertical_alignment=ft.CrossAxisAlignment.START,
+            )
+        body = ft.Row(
+            [table_panel, ft.Container(width=COL_GAP), side],
+            alignment=ft.MainAxisAlignment.CENTER,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+            wrap=True,
+            run_spacing=10,
+        )
+        return ft.Column(
+            [body, ft.Container(height=12), controls],
+            spacing=0,
+        )
+
+    def _on_resize(self, _w, _h) -> None:
+        """窗口由窄变宽（或反过来）时只换外层布局，棋局状态不动。"""
+        if self._layout_host is None or self._panels is None:
+            return
+        wide = _wide_layout(self.page)
+        if wide == self._wide_mode:
+            return
+        self._wide_mode = wide
+        self._layout_host.content = self._compose(wide)
+        self._layout_host.expand = bool(wide)
+        self._layout_host.alignment = (ft.Alignment.CENTER if wide
+                                       else ft.Alignment.TOP_LEFT)
+        self.page.update()
 
     def build(self) -> ft.Control:
         """搭出对局页（球桌 + 右侧信息栏）。"""
@@ -418,55 +604,88 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
                 pass
 
         table_panel = self.table_view.build()
-        # 球画在 Stack 里，桌子建好之后再补一次（sync 会把球加进去）
+        # 球画在 Stack 里，桌子建好之后再补一次（sync 会把球加进去）；
+        # 瞄准线 / 杆法红点也要等 Stack 建好才能画，这里补一次刷新。
         self.table_view.sync()
+        self._update_aim_preview()
 
-        # 外接控制器：转盘 + 力度条 + 读数 + 击球按钮（摆在下方的空位）
+        # 外接控制器：角度转盘 + 力度条 + 击球点圆盘 + 读数 + 击球按钮。
+        # 拆成三行短 Row（每行都窄于 CONTROLS_W），宽屏第三列不会被挤到
+        # 球桌下方；窄屏整块落在球桌下面，一屏也放得下。
         self._render_power(force_to_power(self._force_n))
         self._render_controls_text()
 
-        controls_panel = ft.Row(
+        top_row = ft.Row(
             [
                 ft.Column(
-                    [
-                        ft.Text(t("billiards.angle"), size=11,
-                                color=T.TEXT_MUTED),
-                        self.dial.control,
-                    ],
+                    [ft.Text(t("billiards.angle"), size=11,
+                             color=T.TEXT_MUTED), self.dial.control],
                     spacing=4,
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
-                ft.Container(width=10),
+                ft.Container(width=8),
                 ft.Column(
-                    [
-                        ft.Text(t("billiards.force"), size=11,
-                                color=T.TEXT_MUTED),
-                        self.powerbar.control,
-                    ],
+                    [ft.Text(t("billiards.force"), size=11,
+                             color=T.TEXT_MUTED), self.powerbar.control],
                     spacing=4,
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
-                ft.Container(width=14),
+                ft.Container(width=8),
                 ft.Column(
-                    [
-                        self.force_text,
-                        self.angle_text,
-                        ft.Container(height=8),
-                        ft.Button(content=ft.Text(t("billiards.shoot"),
-                                                  size=15),
-                                  width=120, height=46,
-                                  on_click=self._shoot_from_controls),
-                        ft.Container(height=4),
-                        self.control_hint,
-                    ],
-                    spacing=3,
+                    [ft.Text(t("billiards.spin"), size=11,
+                             color=T.TEXT_MUTED), self.spin_dial.control,
+                     self.spin_text],
+                    spacing=4,
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
             ],
             alignment=ft.MainAxisAlignment.CENTER,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+            wrap=True, run_spacing=8,
+        )
+        mid_row = ft.Row(
+            [
+                ft.Column(
+                    [ft.Text(t("billiards.force_input"), size=10,
+                             color=T.TEXT_MUTED), self.force_input,
+                     self.force_text, self.angle_text],
+                    spacing=2,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Container(width=10),
+                ft.Button(content=ft.Text(t("billiards.shoot"), size=14),
+                          width=110, height=42,
+                          on_click=self._shoot_from_controls),
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            wrap=True,
-            run_spacing=12,
+            wrap=True, run_spacing=6,
+        )
+        presets = ft.Row(
+            [
+                tap_button(t("billiards.tip_center"),
+                           lambda _e, a=0.0, s=0.0: self._preset_spin(a, s),
+                           width=54, height=28, size=10),
+                tap_button(t("billiards.tip_follow"),
+                           lambda _e, a=0.85, s=0.0: self._preset_spin(a, s),
+                           width=54, height=28, size=10),
+                tap_button(t("billiards.tip_draw"),
+                           lambda _e, a=-0.85, s=0.0: self._preset_spin(a, s),
+                           width=54, height=28, size=10),
+                tap_button(t("billiards.tip_left"),
+                           lambda _e, a=0.0, s=-0.85: self._preset_spin(a, s),
+                           width=54, height=28, size=10),
+                tap_button(t("billiards.tip_right"),
+                           lambda _e, a=0.0, s=0.85: self._preset_spin(a, s),
+                           width=54, height=28, size=10),
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=4, wrap=True, run_spacing=4,
+        )
+        controls_panel = ft.Column(
+            [top_row, mid_row, presets, self.control_hint],
+            spacing=8,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
         side = ft.Column(
@@ -489,21 +708,17 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
                           on_click=self._reset),
             ],
             spacing=3,
-            width=190,
+            width=SIDE_W,
         )
 
-        body = ft.Row(
-            [table_panel, ft.Container(width=14), side],
-            alignment=ft.MainAxisAlignment.CENTER,
-            vertical_alignment=ft.CrossAxisAlignment.START,
-            wrap=True,
-            run_spacing=10,
-        )
-
-        content = ft.Column(
-            [body, ft.Container(height=12), controls_panel],
-            spacing=0,
-        )
+        self._panels = (table_panel, side, controls_panel)
+        self._wide_mode = _wide_layout(self.page)
+        padded = page_padding(self._compose(self._wide_mode))
+        self._layout_host = padded
+        if self._wide_mode:
+            # 三列整体在页面里居中；内容区撑满剩余高度，页面才整齐
+            padded.expand = True
+            padded.alignment = ft.Alignment.CENTER
 
         def _back(_e):
             self._save_match_log(False)
@@ -517,20 +732,24 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
         return ft.Column(
             [app_bar(t("route.billiards.play", default="台球 · 对局"),
                      on_back=_back),
-             page_padding(content)],
+             padded],
             expand=True,
         )
 
     def _attach(self) -> None:
         """起主循环（用 page.run_task：它跑在 flet 自己的事件循环上）。"""
+        # 走全局 resize 分发器：窗口拉宽 / 缩窄时原地换三列 / 上下布局，
+        # 不覆盖框架或其它页面的回调（见 core/responsive.py）
+        responsive.subscribe(self.page, "billiards.play", self._on_resize)
         try:
             self._task = self.page.run_task(self._loop)
         except Exception:                   # noqa: BLE001
             self._task = None
 
     def _detach(self) -> None:
-        """离开对局页：停循环、摘网络回调。"""
+        """离开对局页：停循环、摘 resize 订阅与网络回调。"""
         self._attached = False
+        responsive.unsubscribe(self.page, "billiards.play", self._on_resize)
         if self._task is not None:
             try:
                 self._task.cancel()

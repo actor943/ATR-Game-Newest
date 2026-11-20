@@ -86,6 +86,32 @@ class LayoutMixin:
 
     # ---------- 组装整页 ----------
 
+    def _compose(self, wide: bool) -> ft.Control:
+        """宽屏 / 窄屏两套排版。resize 时只换这一层内容，引擎与主循环不动。"""
+        if not wide:
+            return ft.Column(
+                [self._build_strip(), ft.Container(height=6), self.stage_touch,
+                 ft.Container(height=10), self.pad.build(),
+                 ft.Text(t("dino.touch_hint",
+                           default="点击跳、下滑蹲；下方按键可连发（蹲键按住）"),
+                         size=10, color=T.TEXT_MUTED)],
+                spacing=0,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                scroll=ft.ScrollMode.AUTO,
+            )
+        return ft.Row(
+            [self.stage_touch, ft.Container(width=20), self._build_side()],
+            alignment=ft.MainAxisAlignment.CENTER,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+        )
+
+    def _reflow(self) -> None:
+        """宽窄模式真的变了才换控件树；同一模式内只需重算舞台缩放。"""
+        wide = not self._touch
+        if wide != self._last_wide:
+            self._last_wide = wide
+            self._layout_host.content = self._compose(wide)
+
     def build(self) -> ft.Control:
         self._layout()
         self._render()
@@ -94,31 +120,15 @@ class LayoutMixin:
         # 舞台外层包一层手势：点击跳，下滑蹲。
         # on_tap 是点击跳跃的兜底（on_tap_up 在手势竞争时可能不触发），
         # on_tap_cancel 负责清理拖动状态；_PlayPage 内部做了同次点击去重。
-        stage_touch = ft.GestureDetector(
+        self.stage_touch = ft.GestureDetector(
             content=self.stage,
             on_tap=self._on_stage_tap,
             on_tap_down=self._swipe_start,
             on_tap_up=self._swipe_end,
             on_tap_cancel=self._swipe_cancel,
         )
-
-        if self._touch:
-            body = ft.Column(
-                [self._build_strip(), ft.Container(height=6), stage_touch,
-                 ft.Container(height=10), self.pad.build(),
-                 ft.Text(t("dino.touch_hint",
-                           default="点击/轻滑跳，下滑蹲；下方按键可连发"),
-                         size=10, color=T.TEXT_MUTED)],
-                spacing=0,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                scroll=ft.ScrollMode.AUTO,
-            )
-        else:
-            body = ft.Row(
-                [stage_touch, ft.Container(width=20), self._build_side()],
-                alignment=ft.MainAxisAlignment.CENTER,
-                vertical_alignment=ft.CrossAxisAlignment.START,
-            )
+        self._last_wide = not self._touch
+        self._layout_host = ft.Container(content=self._compose(self._last_wide))
 
         def _back(_e):
             self._detach()
@@ -127,6 +137,6 @@ class LayoutMixin:
         return ft.Column(
             [app_bar(t("route.dino.play", default="小恐龙 · 对局"),
                      on_back=_back),
-             page_padding(body)],
+             page_padding(self._layout_host)],
             expand=True,
         )

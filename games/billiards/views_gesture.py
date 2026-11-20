@@ -85,7 +85,9 @@ class PlayGestureMixin:
         self.table_view.clear_aim()
         self._render_power(0.0)
         if aim and aim[2] >= 0.06:
-            self._shoot(aim[0], aim[1], aim[2])
+            # 拉弓和转盘走同一套杆法：出杆前选好的高低杆 / 加塞照样生效
+            self._shoot(aim[0], aim[1], aim[2], self._top, self._side)
+            self._reset_spin()
         self._render_side()
         self.page.update()
 

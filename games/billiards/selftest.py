@@ -5,6 +5,8 @@
 
 * 物理：摆球不重叠、球会互相撞、摩擦会让球停下、撞库不出台、
   球能进袋、高速球不会穿透；
+* 杆法：高低杆让白球跟进 / 回缩 / 滚得更远，加塞让吃库反弹变线、
+  碰球时「让点」，旋量会衰减并归零；
 * 规则：空杆 / 白球落袋 / 打进对方球会犯规换手，进自己的球继续，
   提前打进 8 号球判负，清完组再打进 8 号球获胜；
 * 序列化：整局快照能原样往返。
@@ -20,7 +22,7 @@ from .engine import (
 )
 from .physics import (
     BASE_H, BASE_W, KIND_CUE, KIND_EIGHT, KIND_SOLID, KIND_STRIPE, Ball,
-    all_stopped, ball_color, kind_of, legal_spot, step,
+    all_stopped, ball_color, clamp_tip, kind_of, legal_spot, step,
 )
 
 
@@ -158,6 +160,151 @@ def _test_legal_spot() -> None:
     assert not legal_spot(eng.balls, t, -5.0, t.height / 2)
     assert not legal_spot(eng.balls, t, t.width + 5.0, t.height / 2)
     assert not legal_spot(eng.balls, t, t.width / 2, -5.0)
+
+
+# ============================================================
+# 杆法：高低杆 / 加塞
+# ============================================================
+
+
+def _two_balls(eng: BilliardsEngine):
+    """一张只有「白球 + 正前方一颗 1 号球」的干净桌子。"""
+    for b in eng.balls:
+        b.active = False
+    t = eng.table
+    a = Ball(x=200.0, y=t.height / 2, radius=t.ball_radius, number=0)
+    c = Ball(x=260.0, y=t.height / 2, radius=t.ball_radius, number=1,
+             kind=KIND_SOLID)
+    eng.balls = [a, c]
+    return a, c
+
+
+def _head_on(top: float, side: float, frames: int = 30):
+    """正面撞一杆，返回 (白球, 目标球)。"""
+    eng = BilliardsEngine()
+    a, c = _two_balls(eng)
+    assert eng.shoot(1.0, 0.0, 0.8, top, side)
+    for _ in range(frames):
+        step(eng.balls, eng.table, 1 / 60)
+    return a, c
+
+
+def _test_tip_clamp() -> None:
+    """击球点是唯一入口：脏数据 / 越界 / 斜打满都夹到单位圆盘。"""
+    assert clamp_tip(0.0, 0.0) == (0.0, 0.0)
+    a, s = clamp_tip(2.0, -3.0)
+    assert a > 0 and s < 0
+    assert abs(math.hypot(a, s) - 1.0) < 1e-9, (a, s)
+    assert clamp_tip(float("nan"), 0.5) == (0.0, 0.0)
+    assert clamp_tip(float("inf"), -float("inf")) == (0.0, 0.0)
+    assert clamp_tip("oops", None) == (0.0, 0.0)
+    for tp, sd in ((-1.0, -1.0), (1.0, 1.0), (0.3, -0.9), (-5.0, 5.0)):
+        a, s = clamp_tip(tp, sd)
+        assert -1.0 <= a <= 1.0 and -1.0 <= s <= 1.0
+        assert math.hypot(a, s) <= 1.0 + 1e-9
+
+
+def _test_follow_draw() -> None:
+    """中杆定住、高杆跟进、低杆回缩（沿出杆方向，不是碰撞法线）。"""
+    a0, c0 = _head_on(0.0, 0.0)
+    af, cf = _head_on(1.0, 0.0)
+    ad, cd = _head_on(-1.0, 0.0)
+    assert abs(a0.vx) < 1e-6, f"中杆白球应该停住，实际 vx={a0.vx:.1f}"
+    assert af.vx > 20, f"高杆白球应该继续跟进，实际 vx={af.vx:.1f}"
+    assert ad.vx < -20, f"低杆白球应该回缩，实际 vx={ad.vx:.1f}"
+    for c in (c0, cf, cd):
+        assert c.vx > 100, "目标球应该被撞出去"
+
+
+def _test_side_throw() -> None:
+    """加塞「让点」：右塞把目标球带向左，左塞带向右，中杆不偏。"""
+    _, c0 = _head_on(0.0, 0.0, frames=12)
+    _, cr = _head_on(0.0, 1.0, frames=12)
+    _, cl = _head_on(0.0, -1.0, frames=12)
+    assert abs(c0.vy) < 1e-6, f"中杆不该让点，实际 vy={c0.vy:.1f}"
+    assert cr.vy < -1 and cl.vy > 1, (cr.vy, cl.vy)
+    assert abs(cr.vy + cl.vy) < 1e-6, "左右塞应该对称"
+
+
+def _test_side_cushion() -> None:
+    """加塞吃库：右塞把反弹带向右（+y），左塞向左，中杆正反弹。"""
+    def bounce(side: float):
+        eng = BilliardsEngine()
+        for b in eng.balls:
+            b.active = False
+        t = eng.table
+        a = Ball(x=t.width - 60, y=t.height / 2,
+                 radius=t.ball_radius, number=0)
+        eng.balls = [a]
+        assert eng.shoot(1.0, 0.0, 0.8, 0.0, side)
+        for _ in range(20):
+            step(eng.balls, t, 1 / 60)
+            if a.vx < 0:
+                break
+        return a
+
+    b0, br, bl = bounce(0.0), bounce(1.0), bounce(-1.0)
+    assert abs(b0.vy) < 1e-6, f"中杆吃库不该横向跑，实际 vy={b0.vy:.1f}"
+    assert br.vy > 20 and bl.vy < -20, (br.vy, bl.vy)
+    assert abs(br.vy + bl.vy) < 1e-6, "左右塞应该对称"
+    # 只加切向、不动法向：吃库后法向速度不能反着钻回库里
+    assert br.vx < 0 and bl.vx < 0
+
+
+def _test_spin_friction() -> None:
+    """高杆滚得更远，低杆更早停。"""
+    def distance(top: float) -> float:
+        eng = BilliardsEngine()
+        for b in eng.balls:
+            b.active = False
+        t = eng.table
+        a = Ball(x=60.0, y=t.height / 2, radius=t.ball_radius, number=0)
+        eng.balls = [a]
+        assert eng.shoot(1.0, 0.0, 0.5, top, 0.0)
+        n = 0
+        while a.speed() > 0 and n < 2000:
+            step(eng.balls, t, 1 / 60)
+            n += 1
+        assert all_stopped(eng.balls)
+        return a.x - 60.0
+
+    d0, df, dd = distance(0.0), distance(1.0), distance(-1.0)
+    assert df > d0 > dd, (df, d0, dd)
+
+
+def _test_spin_decay() -> None:
+    """旋量随时间衰减；球停下时旋量必须清零。"""
+    eng = BilliardsEngine()
+    for b in eng.balls:
+        b.active = False
+    t = eng.table
+    a = Ball(x=t.width / 2, y=t.height / 2,
+             radius=t.ball_radius, number=0)
+    eng.balls = [a]
+    assert eng.shoot(1.0, 0.0, 0.2, 1.0, 1.0)
+    assert a.spin_life == 1.0
+    for _ in range(30):
+        step(eng.balls, t, 1 / 60)
+    assert 0.0 < a.spin_life < 1.0
+    n = 0
+    while a.speed() > 0 and n < 2000:
+        step(eng.balls, t, 1 / 60)
+        n += 1
+    assert a.spin_life == 0.0 and a.top == 0.0 and a.side == 0.0
+
+
+def _test_engine_shoot_tip() -> None:
+    """引擎出杆会夹紧击球点、记下出杆方向，并写进每杆记录。"""
+    eng = BilliardsEngine()
+    a, _c = _two_balls(eng)
+    assert eng.shoot(1.0, 0.0, 0.6, 3.0, -4.0)
+    tp, sd = clamp_tip(3.0, -4.0)
+    assert abs(a.top - tp) < 1e-9 and abs(a.side - sd) < 1e-9
+    assert abs(math.hypot(a.sdx, a.sdy) - 1.0) < 1e-9
+    eng.judge([1], 1)
+    tip = eng.shots[-1]["tip"]
+    assert abs(tip[0] - tp) < 1e-3 and abs(tip[1] - sd) < 1e-3
+    assert BilliardsEngine.from_dict(eng.to_dict()).to_dict() == eng.to_dict()
 
 
 # ============================================================
@@ -308,6 +455,9 @@ def _run() -> int:
         _test_rack, _test_kind_and_color, _test_collision,
         _test_friction_stops, _test_cushion, _test_pocket,
         _test_no_tunneling, _test_legal_spot,
+        _test_tip_clamp, _test_follow_draw, _test_side_throw,
+        _test_side_cushion, _test_spin_friction, _test_spin_decay,
+        _test_engine_shoot_tip,
         _test_fouls, _test_continue_and_groups, _test_eight_ball,
         _test_ball_in_hand,
         _test_serialize, _test_reset,

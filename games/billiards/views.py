@@ -45,8 +45,14 @@ def build_home(page: ft.Page, navigate: NavigateFn) -> ft.Control:
             menu_card(
                 t("billiards.howto", default="规则说明"),
                 t("billiards.howto_desc",
-                  default="中式八球简化版：先定花色，清完自己的球再打 8 号"),
+                  default="中式八球简化版：先定花色，清完自己的球再打 8 号；高杆跟进、低杆回缩、加塞变线"),
                 "?", available=False,
+            ),
+            menu_card(
+                t("billiards.spin", default="击球点"),
+                t("billiards.spin_hint",
+                  default="拖圆盘上的红点：上=高杆跟进，下=低杆回缩，左右=加塞（吃库变线）；出杆后自动回中杆"),
+                "◎", available=False,
             ),
         ],
         ideal_w=300, spacing=16, max_cols=4,

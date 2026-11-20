@@ -20,6 +20,18 @@
 「穿过去」。所以 :func:`step` 会按速度把一帧拆成若干**子步**，每个子步都
 重新检测碰撞（见 :func:`_substep`）。
 
+杆法（0.4.10）
+--------------
+球杆打在母球不同的位置，会给球留下**旋量**：上下偏是高/低杆，左右偏是
+加塞。这里用一个轻量的 2D 模型还原三种最容易被看见的效果：
+
+* **高杆（follow）**：滚动摩擦变小、碰球后母球继续往前跟；
+* **低杆（draw）**：摩擦变大、碰球后母球沿出杆方向回缩；
+* **加塞（english）**：吃库时反弹方向被带偏，碰目标球时对方被「让点」。
+
+旋量随出杆速度装到母球上，按固定寿命线性衰减；球停下即清零。快照只存
+球位（旋量是一杆之内的瞬态），所以联机快照格式不用改。
+
 规则（谁赢、什么时候换手）在 :mod:`games.billiards.engine`，
 这里不掺任何规则判断。
 """
@@ -68,6 +80,20 @@ STOP_SPEED = 4.0        # 低于这个速度就当作静止
 MAX_SPEED = 640.0       # 满力一杆的速度（像素/秒）
 MAX_SUBSTEP = 12        # 一帧最多拆成多少个子步
 
+# ---- 高低杆 / 加塞 --------------------------------------------------
+# 击球点用「单位圆盘」里的 (top, side) 表示：top>0 高杆、<0 低杆，
+# side>0 右塞、<0 左塞；两者同时打满时按圆盘边界等比缩放（不能出界）。
+TIP_RADIUS = 0.78       # 圆盘边缘对应球半径的 78%（再外就滑杆了）
+SPIN_LIFE = 2.2         # 旋量寿命（秒）。桌上停球时间 = max_speed/roll_decel，
+                        # 两个量都随 scale 缩放 → 与桌尺寸无关，可用固定秒数
+SPIN_SPEED_LOSS = 0.10  # 偏心击球分给旋转的能量（满偏时直线速度 -10%）
+FOLLOW_FRICTION = 0.42  # 高杆：滚动摩擦最多减少 42%（滚得更远）
+DRAW_FRICTION = 0.55    # 低杆：滚动摩擦最多增加 55%（更早停）
+FOLLOW_GAIN = 0.34      # 高杆碰球后的跟进速度 / 碰前速度
+DRAW_GAIN = 0.42        # 低杆碰球后的回缩速度 / 碰前速度
+SIDE_CUSHION = 0.32     # 加塞吃库的切向冲量 / 法向入射速度（≈18° 偏转）
+SIDE_THROW = 0.055      # 加塞「让点」：目标球被带偏的切向比例
+
 # ============================================================
 # 现实世界标准参数（0.4.10：把「牛顿」当成输入单位，并校准手感）
 # ============================================================
@@ -84,19 +110,21 @@ MAX_SUBSTEP = 12        # 一帧最多拆成多少个子步
 BALL_MASS_KG = 0.17          # 标准台球质量（kg）
 REAL_TABLE_W_M = 2.54        # 9 尺桌台面宽（m）
 REAL_TABLE_H_M = 1.27        # 9 尺桌台面高（m）
-FORCE_MAX_N = 75.0           # 力度条上限（牛顿）——「各个牛的力」封顶 75 牛
-# 球杆与球的接触时间（s）：让 75N 对应「满力一杆」的归一化力度。
+FORCE_MAX_N = 200.0          # 力度上限（牛顿）：0~200，可拖动也可输入
+# 球杆与球的接触时间（s）：让 200N 对应「满力一杆」的归一化力度。
+# 力度只是 0~1 的归一化输入（联机协议也一样），改上限不会改变出杆手感，
+# 只是把「满力」重新标成 200 牛，给玩家更细的力度刻度。
 CUE_CONTACT_S = 0.0022
 
 
 def force_to_power(force_n: float) -> float:
-    """牛顿 -> 归一化力度（0~1）：75N 即满力。"""
+    """牛顿 -> 归一化力度（0~1）：200N 即满力，超出范围自动截断。"""
     f = max(0.0, min(FORCE_MAX_N, float(force_n)))
     return f / FORCE_MAX_N
 
 
 def power_to_force(power: float) -> float:
-    """归一化力度 -> 牛顿（0~75）。"""
+    """归一化力度 -> 牛顿（0~200）。"""
     p = max(0.0, min(1.0, float(power)))
     return p * FORCE_MAX_N
 
@@ -107,6 +135,46 @@ def max_speed_mps() -> float:
     游戏像素桌 760px 对应真实 2.54m，所以 px/s 除以这个比值即得 m/s。
     """
     return MAX_SPEED * (REAL_TABLE_W_M / BASE_W)
+
+
+# ============================================================
+# 击球点（高低杆 / 加塞）
+# ============================================================
+
+
+def clamp_tip(top: float, side: float) -> Tuple[float, float]:
+    """把击球点夹到合法圆盘里，返回 ``(高低杆, 加塞)``，均为 -1~1。
+
+    这是**所有外部输入**（UI 拖拽 / 网络包 / 自检）的唯一入口：非数字、
+    ``NaN``、``Inf`` 一律当中杆；越界按 ``top² + side² ≤ 1`` 等比缩放，
+    保证球杆不会打到球外面。联机两端调同一个函数，结果必然一致。
+    """
+    try:
+        a, b = float(top), float(side)
+    except (TypeError, ValueError, OverflowError):
+        return 0.0, 0.0
+    if not (math.isfinite(a) and math.isfinite(b)):
+        return 0.0, 0.0
+    a = max(-1.0, min(1.0, a))
+    b = max(-1.0, min(1.0, b))
+    d = math.hypot(a, b)
+    if d > 1.0:
+        a, b = a / d, b / d
+    return a, b
+
+
+def set_shot_spin(ball: Ball, dx: float, dy: float,
+                  top: float, side: float) -> None:
+    """出杆时给母球装上旋量；``dx/dy`` 是**已归一化**的出杆方向。
+
+    ``sdx/sdy`` 记住这一杆的方向：碰球后母球可能已经停住甚至反向，
+    跟进 / 回缩仍要沿原来的出杆线，不能跟着当前速度走。
+    """
+    a, s = clamp_tip(top, side)
+    ball.top, ball.side = a, s
+    ball.spin_life = 1.0 if (a or s) else 0.0
+    ball.sdx, ball.sdy = float(dx), float(dy)
+
 
 # ============================================================
 # 球的种类与颜色
@@ -158,7 +226,11 @@ def kind_of(number: int) -> str:
 
 @dataclass
 class Ball:
-    """一颗球：位置 + 速度 + 半径 + 号码。"""
+    """一颗球：位置 + 速度 + 半径 + 号码 + 一杆之内的旋量。
+
+    旋量字段只在母球出杆后有意义，且是**瞬态**（球停下就清零），所以不进
+    ``to_dict`` 快照 —— 联机快照在一杆结束后广播，那时本来就没旋量了。
+    """
 
     x: float
     y: float
@@ -168,15 +240,39 @@ class Ball:
     number: int = 0
     kind: str = KIND_CUE
     active: bool = True          # False = 已经落袋
+    # 击球点偏移：-1~1。top>0 高杆（跟进）、<0 低杆（回缩）；
+    # side>0 右塞、<0 左塞。spin_life 是剩余旋量寿命 0~1。
+    top: float = 0.0
+    side: float = 0.0
+    spin_life: float = 0.0
+    sdx: float = 0.0             # 这一杆的方向（世界坐标，单位向量）
+    sdy: float = 0.0
 
     def speed(self) -> float:
         """当前速度大小。"""
         return math.hypot(self.vx, self.vy)
 
+    def spin_top(self) -> float:
+        """当前有效高/低杆旋量（已按寿命衰减）。"""
+        return self.top * self.spin_life
+
+    def spin_side(self) -> float:
+        """当前有效加塞旋量（已按寿命衰减）。"""
+        return self.side * self.spin_life
+
+    def clear_spin(self) -> None:
+        """清空旋量（球停下 / 落袋 / 归位时用）。"""
+        self.top = 0.0
+        self.side = 0.0
+        self.spin_life = 0.0
+        self.sdx = 0.0
+        self.sdy = 0.0
+
     def stop(self) -> None:
-        """把速度清零（落袋 / 归位时用）。"""
+        """把速度与旋量清零（落袋 / 归位时用）。"""
         self.vx = 0.0
         self.vy = 0.0
+        self.clear_spin()
 
     def to_dict(self) -> list:
         """序列化（联机快照用）：``[号码, x, y, 是否在台面]``。"""
@@ -243,8 +339,10 @@ def rack_numbers() -> List[int]:
 def rack_balls(table: Table) -> List[Ball]:
     """按标准八球摆法摆 15 颗目标球（不含白球）。"""
     r = table.ball_radius
-    # 三角形顶点在摆球区前沿，最尾一排离底袋留一点空隙
-    apex_x = table.width - r * 9.2
+    # 真实八球规则：三角顶点落在**脚点**（台面长边 3/4 处）而不是贴着
+    # 脚库。球间距 2R、排距 √3R 仍是标准相切比例，整堆球因此等比左移，
+    # 尾排离右库留出约 4 个球直径的空间，和真实球桌一致。
+    apex_x = table.foot_x
     cy = table.height / 2.0
     balls: List[Ball] = []
     for i, number in enumerate(rack_numbers()):
@@ -256,7 +354,7 @@ def rack_balls(table: Table) -> List[Ball]:
                 row = rr
                 break
             index -= rr + 1
-        x = apex_x + row * 1.732 * r          # 每排往后挪 1.732R
+        x = apex_x + row * math.sqrt(3.0) * r   # 排距 √3R：球正好相切
         y = cy + (index - row / 2.0) * 2.0 * r
         balls.append(Ball(x=x, y=y, radius=r, number=number,
                           kind=kind_of(number)))
@@ -306,26 +404,47 @@ def _substep(balls: List[Ball], table: Table, h: float, ev: dict) -> None:
         b.y += b.vy * h
 
     # 2) 库边反弹（矩形台面，四条边各判一次）
+    #    加塞在这里生效：侧旋让球在库面上「打滑」，给一个切向冲量。
+    #    只加切向、不动法向，球不会反弹后又立刻钻回库里；切向速度还设了
+    #    上限，多次撞库也不会越弹越快。
     r = table.ball_radius
     for b in balls:
         if not b.active:
             continue
+        walls: List[Tuple[float, float, float]] = []   # (内向法线 x, y, 法向入射速度)
         if b.x < r:
             b.x = r
-            b.vx = abs(b.vx) * RESTITUTION
-            ev["cushion"] += 1
+            vn = abs(b.vx)
+            b.vx = vn * RESTITUTION
+            walls.append((1.0, 0.0, vn))       # 左库：法线指向 +x
         elif b.x > table.width - r:
             b.x = table.width - r
-            b.vx = -abs(b.vx) * RESTITUTION
-            ev["cushion"] += 1
+            vn = abs(b.vx)
+            b.vx = -vn * RESTITUTION
+            walls.append((-1.0, 0.0, vn))      # 右库：法线指向 -x
         if b.y < r:
             b.y = r
-            b.vy = abs(b.vy) * RESTITUTION
-            ev["cushion"] += 1
+            vn = abs(b.vy)
+            b.vy = vn * RESTITUTION
+            walls.append((0.0, 1.0, vn))       # 上库：法线指向 +y
         elif b.y > table.height - r:
             b.y = table.height - r
-            b.vy = -abs(b.vy) * RESTITUTION
+            vn = abs(b.vy)
+            b.vy = -vn * RESTITUTION
+            walls.append((0.0, -1.0, vn))      # 下库：法线指向 -y
+        for (nx, ny, vn) in walls:
             ev["cushion"] += 1
+            ss = b.spin_side()
+            if abs(ss) < 1e-6 or vn <= 0:
+                continue
+            # (ny, -nx) 是「沿这条库、站在击球者身位看的右手边」：
+            # 右库法线 (-1,0) → (0,1) 向下，正是面朝右时球员的右侧。
+            tx, ty = ny, -nx
+            vt = b.vx * tx + b.vy * ty
+            limit = max(vn, 1.0) * 1.25
+            new_vt = max(-limit, min(limit, vt + SIDE_CUSHION * ss * vn))
+            b.vx += tx * (new_vt - vt)
+            b.vy += ty * (new_vt - vt)
 
     # 3) 球与球碰撞（等质量弹性碰撞：法向分量交换，切向不变）
     for i in range(len(balls)):
@@ -347,6 +466,11 @@ def _substep(balls: List[Ball], table: Table, h: float, ev: dict) -> None:
             vn = (a.vx - c.vx) * nx + (a.vy - c.vy) * ny
             if vn <= 0:
                 continue                     # 已经在分开，不用管
+            # 母球这一杆带来的旋量（只有母球会带杆法）
+            cue = a if a.number == 0 else (c if c.number == 0 else None)
+            pre_speed = cue.speed() if cue is not None else 0.0
+            ss = cue.spin_side() if cue is not None else 0.0
+            tt = cue.spin_top() if cue is not None else 0.0
             a.vx -= vn * nx
             a.vy -= vn * ny
             c.vx += vn * nx
@@ -364,19 +488,53 @@ def _substep(balls: List[Ball], table: Table, h: float, ev: dict) -> None:
                 elif c.number == 0:
                     ev["first_contact"] = a.number
 
+            if cue is not None:
+                # 加塞「让点」：母球接触面的横向打滑把目标球带偏一点点，
+                # 母球自己拿反作用（保持动量守恒）。右塞把目标球带向左。
+                if abs(ss) > 1e-6:
+                    other = c if cue is a else a
+                    tx, ty = -ny, nx
+                    kick = -SIDE_THROW * ss * vn
+                    other.vx += tx * kick
+                    other.vy += ty * kick
+                    cue.vx -= tx * kick
+                    cue.vy -= ty * kick
+                # 高低杆在「第一次碰到球」这一刻释放：高杆继续往前跟，
+                # 低杆沿出杆线往回缩。方向用出杆时记下的 sdx/sdy，
+                # 而不是碰撞法线 —— 薄球时法线几乎垂直于出杆线，用它会
+                # 把白球甩到侧面去。没有记录（自检直接造的球）就退回法线。
+                if abs(tt) > 1e-6 and pre_speed > 0:
+                    ax, ay = cue.sdx, cue.sdy
+                    if math.hypot(ax, ay) < 1e-9:
+                        ax, ay = (nx, ny) if cue is a else (-nx, -ny)
+                    gain = ((FOLLOW_GAIN if tt > 0 else DRAW_GAIN)
+                            * tt * pre_speed)
+                    cue.vx += ax * gain
+                    cue.vy += ay * gain
+                    cue.top = 0.0            # 跟进/回缩一杆只释放一次
+
     # 4) 滚动摩擦：速度按固定减速度变小（匀减速，比乘系数更接近真实）
+    #    高杆改成「自然滚动」，摩擦小、走得远；低杆是「反旋滑行」，摩擦大。
     for b in balls:
         if not b.active:
             continue
+        b.spin_life = max(0.0, b.spin_life - h / SPIN_LIFE)
         sp = b.speed()
         if sp <= 0:
+            b.clear_spin()
             continue
-        ns = sp - table.roll_decel * h
+        tt = b.spin_top()
+        decel = table.roll_decel * (1.0
+                                    - FOLLOW_FRICTION * max(0.0, tt)
+                                    + DRAW_FRICTION * max(0.0, -tt))
+        ns = sp - decel * h
         if ns < STOP_SPEED:
             ns = 0.0
         k = ns / sp
         b.vx *= k
         b.vy *= k
+        if ns == 0.0:
+            b.clear_spin()               # 球停了，旋量也一并消失
 
     # 5) 落袋判定
     for b in balls:

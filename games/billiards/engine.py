@@ -25,8 +25,9 @@ import math
 from typing import List, Optional, Sequence, Tuple
 
 from .physics import (
-    BASE_H, BASE_W, KIND_CUE, KIND_EIGHT, KIND_SOLID, KIND_STRIPE, Ball,
-    Table, all_stopped, find_spot, kind_of, legal_spot, rack_balls, step,
+    BASE_H, BASE_W, KIND_CUE, KIND_EIGHT, KIND_SOLID, KIND_STRIPE,
+    SPIN_SPEED_LOSS, Ball, Table, all_stopped, clamp_tip, find_spot, kind_of,
+    legal_spot, rack_balls, set_shot_spin, step,
 )
 
 # ============================================================
@@ -72,6 +73,7 @@ class BilliardsEngine:
         self._ev_potted: List[int] = []
         self._ev_first: Optional[int] = None
         self._ev_hits = 0
+        self._shot_tip: Tuple[float, float] = (0.0, 0.0)   # 这一杆的击球点
         self.reset()
 
     # ============================================================
@@ -96,6 +98,7 @@ class BilliardsEngine:
         self._ev_potted = []
         self._ev_first = None
         self._ev_hits = 0
+        self._shot_tip = (0.0, 0.0)
 
     # ============================================================
     # 查询
@@ -146,10 +149,14 @@ class BilliardsEngine:
     # 击球
     # ============================================================
 
-    def shoot(self, dx: float, dy: float, power: float) -> bool:
-        """给白球一个初速度（``dx``/``dy`` 是方向，``power`` 是 0~1）。
+    def shoot(self, dx: float, dy: float, power: float,
+              top: float = 0.0, side: float = 0.0) -> bool:
+        """给白球一个初速度，并按击球点装上高低杆 / 加塞的旋量。
 
-        返回是否成功出杆。方向会归一化，所以传什么长度都行。
+        ``dx``/``dy`` 是方向（会归一化），``power`` 是 0~1；``top`` 是
+        高低杆（+1 高杆跟进 / -1 低杆回缩），``side`` 是加塞
+        （+1 右塞 / -1 左塞）。两者会被 :func:`physics.clamp_tip` 夹到
+        单位圆盘内，所以 UI、联机、自检传什么脏数据都不会炸。
         """
         if not self.can_shoot():
             return False
@@ -160,8 +167,14 @@ class BilliardsEngine:
         if cue is None:
             return False
         p = max(0.05, min(1.0, float(power)))
-        cue.vx = dx / n * self.table.max_speed * p
-        cue.vy = dy / n * self.table.max_speed * p
+        a, s = clamp_tip(top, side)
+        # 偏心击球会分一部分能量给旋转，直线速度略降（满偏 -10%）
+        eff = p * (1.0 - SPIN_SPEED_LOSS * (a * a + s * s))
+        ux, uy = dx / n, dy / n
+        cue.vx = ux * self.table.max_speed * eff
+        cue.vy = uy * self.table.max_speed * eff
+        set_shot_spin(cue, ux, uy, a, s)
+        self._shot_tip = (a, s)
         self.phase = PHASE_SHOOT
         self.ball_in_hand = False
         self._ev_potted = []
@@ -310,6 +323,7 @@ class BilliardsEngine:
             "player": shooter,
             "potted": list(potted),
             "fouls": list(fouls),
+            "tip": [round(self._shot_tip[0], 3), round(self._shot_tip[1], 3)],
         })
 
     # ============================================================

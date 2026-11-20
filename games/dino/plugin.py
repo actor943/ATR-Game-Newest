@@ -33,7 +33,7 @@ register_game(GamePlugin(
         id="dino",
         title="小恐龙",
         icon="🦖",
-        description="Chrome 离线恐龙：跳过仙人掌、蹲过飞鸟，自动加速",
+        description="Chrome 离线恐龙：原生像素素材，跳过仙人掌、蹲过飞鸟，自动加速",
         available=True,
         home_path="/g/dino",
         title_key="route.dino",

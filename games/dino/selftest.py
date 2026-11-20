@@ -5,6 +5,10 @@
 枚举每种障碍的起跳 / 下蹲时机，确认在最低速度下也有足够宽的容错窗口。
 这道断言专门防止「调参调出物理上跳不过去的必死局」（0.4.10 曾发生过：
 最高仙人掌窗口 0 tick、h≥10 和贴地飞鸟仅 1 tick）。
+
+接入原生 PNG 素材后，6 种仙人掌的碰撞框直接取素材比例（最宽 10.5 单位），
+所以这里会**逐个素材形态**枚举窗口；另外检查素材齐全、云层 / 地面滚动 /
+昼夜切换这些新增场景状态。
 """
 
 from __future__ import annotations
@@ -72,7 +76,7 @@ def _air_ticks() -> int:
 
 
 def _assert_passable() -> None:
-    """每种障碍在起始速度 / 顶速下都必须有 ≥3 tick 的动作容错窗口。"""
+    """每种障碍（含 6 种仙人掌素材）在起始速度 / 顶速下都要 ≥3 tick 窗口。"""
     keys = ("BASE_SPEED", "SPEED_GROWTH", "MAX_SPEED")
     orig = {k: getattr(eng, k) for k in keys}
     try:
@@ -84,21 +88,22 @@ def _assert_passable() -> None:
                 assert n >= 3, (
                     "仙人掌 h=%s 在速度 %.2f 下仅 %d tick 容错，过于苛刻/无解"
                     % (h, speed, n))
+            windows = []
+            for key, w, h in eng.CACTUS_VARIANTS:
+                n = len(_pass_window("cactus", GROUND_TOP - h, w, h,
+                                     speed, "jump"))
+                windows.append("%s=%d" % (key, n))
+                assert n >= 3, (
+                    "素材 %s (%.1f×%.1f) 在速度 %.2f 下仅 %d tick 容错"
+                    % (key, w, h, speed, n))
             hi = len(_pass_window("bird", GROUND_TOP - DINO_STAND_H,
                                   eng.BIRD_W, eng.BIRD_H, speed, "duck"))
             lo = len(_pass_window("bird", GROUND_TOP - eng.BIRD_H,
                                   eng.BIRD_W, eng.BIRD_H, speed, "jump"))
             assert hi >= 3, "高空飞鸟在速度 %.2f 下下蹲窗口仅 %d tick" % (speed, hi)
             assert lo >= 3, "贴地飞鸟在速度 %.2f 下起跳窗口仅 %d tick" % (speed, lo)
-            print("    速度 %.2f：仙人掌/飞鸟容错窗口 "
-                  "h%d=%d h%d=%d 飞鸟(蹲)=%d 飞鸟(跳)=%d" %
-                  (speed, eng.CACTUS_MIN_H,
-                   len(_pass_window("cactus", GROUND_TOP - eng.CACTUS_MIN_H,
-                                    CACTUS_W, eng.CACTUS_MIN_H, speed, "jump")),
-                   eng.CACTUS_MAX_H,
-                   len(_pass_window("cactus", GROUND_TOP - eng.CACTUS_MAX_H,
-                                    CACTUS_W, eng.CACTUS_MAX_H, speed, "jump")),
-                   hi, lo))
+            print("    速度 %.2f：%s 飞鸟(蹲)=%d 飞鸟(跳)=%d"
+                  % (speed, " ".join(windows), hi, lo))
     finally:
         _restore_constants(orig)
 
@@ -196,7 +201,60 @@ def _run() -> None:
     print("  可玩性检查（枚举起跳窗口）:")
     _assert_passable()
 
-    print("dino selftest: OK")
+    # —— 8. 素材：19 张 PNG 全在，路径不带 assets/ 前缀，尺寸与引擎比例一致 ——
+    from . import assets
+    assert assets.assets_available(), \
+        "缺少素材：" + ", ".join(k for k, s in assets.SPRITES.items() if not s.exists())
+    assert len(assets.SPRITES) == 19, "素材表数量与 assets/Dino_assets 不符"
+    assert all(not s.src.startswith("assets/") for s in assets.SPRITES.values()), \
+        "Flet 资源路径必须相对 assets 根，不能带 assets/ 前缀"
+    for _key, w, h in eng.CACTUS_VARIANTS:
+        sp = assets.sprite(_key)
+        assert abs(sp.w / eng.PPU - w) < 0.15, "%s 素材宽度与碰撞框不符" % _key
+        assert abs(sp.h / eng.PPU - h) < 0.15, "%s 素材高度与碰撞框不符" % _key
+    assert "Dino_assets/" in assets.dino_src("run", 1)
+    assert assets.dino_src("run", 0) != assets.dino_src("run", 1)
+    assert assets.bird_src(0) != assets.bird_src(1)
+
+    # —— 9. 场景：地面滚动有界、云层向左视差、到分数会天黑再天亮 ——
+    e6 = Dino(seed=3)
+    e6.start()
+    e6.spawn_countdown = 1e9          # 只测场景，关掉自然障碍
+    cloud_x0 = e6.clouds[0].x
+    for _ in range(30):
+        e6.step(1.0)
+    assert e6.clouds[0].x < cloud_x0, "云应当向左飘"
+    assert 0 <= e6.track_offset < eng.TRACK_TILE_W, "地面滚动偏移必须落在一个贴图周期内"
+    e7 = Dino(seed=3)
+    e7.start()
+    e7.spawn_countdown = 1e9
+    e7.score = eng.NIGHT_FIRST - 0.01
+    assert not e7.night
+    e7.step(1.0)
+    assert e7.night and e7.milestone == 1, "跑过里程碑应当天黑"
+    snap = e7.serialize()
+    assert snap["night"] and snap["clouds"] and "track_offset" in snap
+
+    # —— 10. 素材形态：实际跑一会应当 6 种仙人掌都可能出现且 variant 可序列化 ——
+    seen = set()
+    for seed in range(12):
+        e8 = Dino(seed=seed)
+        e8.start()
+        e8.score = 300.0              # 解锁全部形态
+        for _ in range(400):
+            e8.step(1.0)
+            for o in e8.obstacles:
+                if o.kind == "cactus":
+                    seen.add(o.variant)
+            if not e8.alive:
+                break
+        for o in e8.serialize()["obstacles"]:
+            assert "variant" in o
+    assert seen, "跑动中应当生成过仙人掌"
+    assert seen.issubset({v[0] for v in eng.CACTUS_VARIANTS}), \
+        "出现了素材表里不存在的形态：" + str(seen)
+
+    print("dino selftest: OK（含素材 / 场景 / 形态检查）")
 
 
 if __name__ == "__main__":

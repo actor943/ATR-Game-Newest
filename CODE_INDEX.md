@@ -207,22 +207,66 @@
 | `games/tetris/history_view.py` | 59 | 俄罗斯方块历史记录页入口。 |
 | `games/tetris/selftest.py` | 35 | 引擎自检：方块齐全 / 硬降消行 / 同种子确定性 / 序列化往返。 |
 
-### O. 台球（12 个，0.4.9 新增）
+### O. 台球（13 个，0.4.9 新增，0.4.10 优化 + 高低杆 / 加塞）
 
 | 文件 | 行数 | 作用 |
 | --- | --- | --- |
 | `games/billiards/plugin.py` | 49 | 台球插件声明（players=2、online=True，路由 /g/billiards、/g/billiards/play、/g/billiards/history）。 |
 | `games/billiards/assets.py` | 44 | 贴图资源：球桌 `table.png`（1200×678，绿色台面区 1087×565）、球 `ball_1~16.png`；贴图路径与台面区的几何常量。 |
-| `games/billiards/physics.py` | 393 | **物理内核**（不依赖 flet）：球、球桌尺寸与缩放、摆球、库边反弹、等质量弹性碰撞、滚动摩擦、**子步进防穿透**、落袋判定（袋口位置量自贴图）、合法落点查找。 |
-| `games/billiards/engine.py` | 397 | **规则引擎**（不依赖 flet）：中式八球简化规则 —— 定花色、犯规判定（空杆 / 白球落袋 / 打进对方球）、换手、自由球、8 号球胜负、整局快照序列化。 |
-| `games/billiards/views_table.py` | 207 | 球桌画面：球桌贴图（按台面区对齐物理坐标）+ 绝对定位的球 + 瞄准线；`ft.GestureDetector` 把手势转成物理坐标。 |
-| `games/billiards/views_gesture.py` | 122 | 手势 mixin：按住白球往后拉（拉弓）瞄准、犯规后拖动摆白球。 |
-| `games/billiards/views_net.py` | 220 | 联机 mixin：算身份（1 号 / 2 号 / 观战）、击球请求、摆球请求、房主广播整局快照。 |
-| `games/billiards/views_play.py` | 417 | 对局页：组装球桌与信息栏、60FPS 物理主循环、界面刷新、重开、落盘。 |
-| `games/billiards/views.py` | 65 | 子菜单：开始对局 / 历史记录 / 规则说明。 |
+| `games/billiards/physics.py` | 591 | **物理内核**（不依赖 flet）：球（含 **top / side / spin_life / sdx,sdy 旋量状态**）、球桌缩放、真实脚点摆球（√3R）、0~200 牛力度换算、`clamp_tip()` **安全击球点入口**、`set_shot_spin()`、子步进防穿透；**高低杆改滚动摩擦 + 碰球瞬间跟进/回缩，加塞吃库给切向冲量 + 碰球让点**，旋量按固定寿命衰减、停球清零；落袋与合法落点。 |
+| `games/billiards/engine.py` | 411 | **规则引擎**（不依赖 flet）：中式八球简化规则 —— 定花色、犯规、换手、自由球、8 号球胜负；`shoot(dx,dy,power,top,side)` 夹紧杆法、记出杆方向、把击球点写进每杆记录；整局快照序列化。 |
+| `games/billiards/views_table.py` | 285 | 球桌画面：贴图（按台面区对齐物理坐标）+ 开球线 / 脚点标记 + 绝对定位的球 + 瞄准线；**母球内层 `ft.Stack` 放杆法红点**、`set_tip()` 按出杆方向定位红点并给瞄准线换色；手势转物理坐标。 |
+| `games/billiards/views_gesture.py` | 128 | 手势 mixin：按住白球往后拉（拉弓）瞄准、犯规后拖动摆白球；**拉弓出杆同样带上当前杆法并在出杆后回中杆**。 |
+| `games/billiards/views_net.py` | 238 | 联机 mixin：身份、击球请求、摆球请求、房主广播整局快照；**`shot` / `req_shoot` 增加 `top` / `side`，`_tip_of()` 用 `clamp_tip` 挡脏数据，老客户端缺字段自动当中杆**。 |
+| `games/billiards/views_controls.py` | 271 | 角度转盘 + 力度条（0~200 牛）+ **`SpinDial` 击球点圆盘**（拖红点选高低杆 / 加塞，单位圆盘夹紧）；`set_force()` / `set_spin()` 供数值框与快捷按钮反向同步。 |
+| `games/billiards/views_play.py` | 768 | 对局页：宽屏三列横向同排 / 窄屏上下两行、resize 原地换布局；`_table_size` 先除掉木质库边倍率（RAIL_W/RAIL_H）再算台面，库边不会被裁；控制区拆成三行短 Row（转盘·力度·击球点 / 读数·击球 / 杆法快捷键）；**杆法状态、读数、预设、出杆后归中、历史记录里的杆法**；60FPS 主循环、落盘。 |
+| `games/billiards/views.py` | 72 | 子菜单：开始对局 / 历史记录 / 规则说明 / **击球点（杆法说明）**。 |
 | `games/billiards/history_view.py` | 63 | 台球历史记录页入口（复用 `core/history_view.py`）。 |
-| `games/billiards/selftest.py` | 322 | 自检：摆球不重叠 / 碰撞交换法向速度 / 摩擦停球 / 撞库不出台 / 进袋 / 高速不穿透 / 犯规换手 / 8 号球胜负 / 快照往返。 |
+| `games/billiards/selftest.py` | 472 | 自检 **21 组**：原有摆球 / 碰撞 / 摩擦 / 撞库 / 进袋 / 穿透 / 规则 / 快照，新增 **击球点夹紧、高杆跟进、低杆回缩、加塞让点、吃库对称偏转、摩擦差异、旋量衰减、引擎记录击球点**。 |
 | `games/billiards/__init__.py` | 3 | 包入口（import 即注册）。 |
+
+### P. 扫雷（8 个，0.4.10 新增）
+
+| 文件 | 行数 | 作用 |
+| --- | --- | --- |
+| `games/minesweeper/plugin.py` | 50 | 扫雷插件声明（players=1、online=False，路由 /g/minesweeper、/play、/history）。 |
+| `games/minesweeper/engine.py` | 301 | **纯逻辑引擎**（不依赖 flet）：三档难度、首击安全布雷、8 邻域数字、洪泛展开、插旗、chord、胜负、计时、得分、序列化。 |
+| `games/minesweeper/views.py` | 82 | 子菜单：三档难度卡 / 历史记录 / 操作说明；难度经模块级参数传给对局页（跳转前 invalidate 缓存）。 |
+| `games/minesweeper/views_board.py` | 360 | 对局页：格子控件表、左键翻开 / 右键与长按插旗 / 插旗模式、计时循环、难度切换、落盘、生命周期。 |
+| `games/minesweeper/views_layout.py` | 160 | 页面组装：宽屏「棋盘 + 右侧信息栏」、窄屏「信息条 + 棋盘 + 按钮」；高级盘可横向滚动。 |
+| `games/minesweeper/history_view.py` | 58 | 扫雷历史记录页入口（复用 `core/history_view.py`）。 |
+| `games/minesweeper/selftest.py` | 96 | 引擎自检：首击安全 / 数字 / 洪泛 / 插旗 / chord / 胜负 / 计时 / 序列化往返。 |
+| `games/minesweeper/__init__.py` | 3 | 包入口（import 即注册）。 |
+
+### Q. 弹球机（10 个，0.4.10 新增）
+
+| 文件 | 行数 | 作用 |
+| --- | --- | --- |
+| `games/pinball/plugin.py` | 50 | 弹球机插件声明（players=1、online=False，路由 /g/pinball、/play、/history）。 |
+| `games/pinball/engine.py` | 513 | **纯物理引擎**（不依赖 flet）：固定 400×640 世界坐标、重力与阻尼、**发射道单向活门（进门后隔墙全高生效，球回不到出生点）**、库边 / 圆 / 线段碰撞、挡板旋转与拍击、蓄力发射与顶部导轨、保险杠计分、丢球与 3 球结束、序列化。 |
+| `games/pinball/views.py` | 63 | 子菜单：开始游戏 / 历史记录 / 操作说明。 |
+| `games/pinball/views_board.py` | 253 | 台面画面：`ft.Stack` 绝对定位的静态装饰（全高隔墙 + **单向门片**） + 球 / 挡板圆点 / 蓄力条 / 提示层；`sync()` 每帧只改坐标与门状态，`rebuild(scale)` 处理缩放。 |
+| `games/pinball/views_play.py` | 278 | 对局页：键盘 / 触屏统一 `_act()`、60FPS 物理主循环、挡板按住时限、暂停 / 重开、落盘、生命周期。 |
+| `games/pinball/views_layout.py` | 150 | 页面组装：宽屏「台面 + 右侧信息栏」、窄屏「信息条 + 台面 + 底部按键」；按宽高等比缩放。 |
+| `games/pinball/views_pad.py` | 81 | 触屏按键：左挡板 / 发射（按住蓄力、松手弹射）/ 右挡板 / 暂停。 |
+| `games/pinball/history_view.py` | 57 | 弹球机历史记录页入口（复用 `core/history_view.py`）。 |
+| `games/pinball/selftest.py` | 146 | 物理自检：几何 / 蓄力发射与导轨 / 边界 / 保险杠 / 挡板拍击 / 丢球 / **单向门极端角度** / 暂停 / 快照往返。 |
+| `games/pinball/__init__.py` | 3 | 包入口（import 即注册）。 |
+
+### R. 小恐龙（10 个，0.4.10 新增 + 原生素材版）
+
+| 文件 | 行数 | 作用 |
+| --- | --- | --- |
+| `games/dino/assets.py` | 124 | **素材表**：`assets/Dino_assets/` 19 张 PNG → 相对 `assets/` 根的资源路径；记录原生尺寸与「顶部内容高度」（`Cloud.png` / `Reset.png` 底部大片透明留白）；恐龙 / 飞鸟帧映射、素材齐全检查。 |
+| `games/dino/engine.py` | 310 | **纯逻辑引擎**（不依赖 flet）：奔跑 / 跳跃重力 / 下蹲 / 6 种仙人掌形态（碰撞框取素材原生比例）/ 飞鸟 / 云层视差 / 地面贴图滚动 / 分数里程碑昼夜切换 / 自动加速 / 碰撞 / 序列化。 |
+| `games/dino/plugin.py` | 50 | 插件声明（players=1、online=False，路由 /g/dino、/play、/history）。 |
+| `games/dino/views.py` | 64 | 子菜单：开始游戏 / 历史记录 / 操作说明。 |
+| `games/dino/views_play.py` | 591 | 对局页：`ft.Stack` 绝对定位的真精灵渲染（19 张 PNG 全部用上）、GAME OVER / 重置键浮层、昼夜 `SRC_IN` 换色、`Stack` 裁剪有透明留白的贴图、键盘 / 触屏统一 `_act()`、主循环、resize 重排、落盘、生命周期。 |
+| `games/dino/views_layout.py` | 142 | 页面组装：`_compose(wide)` 宽屏「舞台 + 右侧信息栏」/ 窄屏「信息条 + 舞台 + 触屏键」；`_reflow()` 在宽窄模式切换时原地换控件树，等比缩放。 |
+| `games/dino/views_pad.py` | 91 | 触屏按键：蹲（按住连发）/ 跳 / 暂停。 |
+| `games/dino/history_view.py` | 57 | 历史记录页入口（复用 `core/history_view.py`）。 |
+| `games/dino/selftest.py` | 261 | 引擎自检：碰撞 / 物理 / 难度曲线 / 障碍间隔 / **逐个素材形态枚举起跳窗口** / 素材齐全与比例一致 / 云层 · 地面 · 昼夜场景状态。 |
+| `games/dino/__init__.py` | 3 | 包入口（import 即注册）。 |
 
 
 ---

@@ -33,6 +33,10 @@ from . import billiards  # noqa: F401
 from . import snake  # noqa: F401
 # 0.4.10 新增：Chrome 小恐龙（单人跑酷，自动加速，手机端兼容）
 from . import dino  # noqa: F401
+# 0.4.10 新增：经典扫雷（单人，三档难度，手机端长按插旗）
+from . import minesweeper  # noqa: F401
+# 0.4.10 新增：复古弹球机（单人物理台面，双挡板 / 保险杠得分）
+from . import pinball  # noqa: F401
 
 __all__ = [
     "GamePlugin",

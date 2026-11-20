@@ -31,7 +31,7 @@ def build_home(page: ft.Page, navigate: NavigateFn) -> ft.Control:
             menu_card(
                 t("dino.start", default="开始游戏"),
                 t("dino.start_desc",
-                  default="Chrome 小恐龙：跳过仙人掌、蹲过飞鸟，速度越来越快"),
+                  default="原生像素素材：跳过仙人掌、蹲过飞鸟，速度越来越快，还会天黑"),
                 "🦖", on_click=_play,
             ),
             menu_card(
@@ -43,7 +43,7 @@ def build_home(page: ft.Page, navigate: NavigateFn) -> ft.Control:
             menu_card(
                 t("dino.howto", default="操作说明"),
                 t("dino.howto_desc",
-                  default="空格/↑ 跳，↓ 蹲；手机点击跳、下滑蹲"),
+                  default="空格/↑ 跳，↓ 蹲；手机点击跳、下滑蹲；P 暂停、R 重开"),
                 "?", available=False,
             ),
         ],

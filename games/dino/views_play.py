@@ -9,8 +9,17 @@
 * **触屏（手机）**：屏幕点击 / 下方「跳」键起跳；按住「蹲」键下蹲；
   直接在画面上**下滑**也能下蹲。
 
-复古像素风：黑底 + 浅灰恐龙 + 绿色仙人掌 + 橙色飞鸟。恐龙与障碍只用少量
-``Container`` 定位，性能开销很小。
+画面用的是 ``assets/Dino_assets/`` 里 19 张原生 Chrome 恐龙 PNG（见
+``games/dino/assets.py``）：恐龙 7 帧、仙人掌 6 种、飞鸟 2 帧，外加云、
+地面、GAME OVER 和重置键。全部用 ``ft.Image`` 定位在 Stack 上，坐标由引擎
+的世界坐标乘 ``self.scale`` 得到；碰撞框与贴图同宽高，所以「看到的」就是
+「撞到的」。白天是原版米白底 + 深灰精灵，跑过里程碑会切换成浅色精灵的夜景
+（``color_blend_mode=SRC_IN`` 给贴图换色，不改素材文件）。
+
+``Cloud.png`` / ``Reset.png`` 的 PNG 底部有大块透明留白，直接压进小框会把
+图案挤扁，所以这两种要走 ``_clipped_pair()`` 的裁剪容器，只露出顶部内容。
+
+素材万一没打进安装包也不会白屏：每张图都带 ``error_content`` 纯色兜底。
 
 为避免内存泄漏，离开页面时必须 ``_detach()``：取消 asyncio 任务、还原
 ``page.on_keyboard_event`` 与 ``page.on_resize``、停掉触屏按键的连发任务。
@@ -19,7 +28,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import flet as ft
 
@@ -28,22 +37,81 @@ from core.i18n import t
 from core.registry import NavigateFn
 from core.theme import T
 
+from . import assets
 from .engine import (
-    DINO_DUCK_H, DINO_STAND_H, DINO_W, DINO_X, GROUND_TOP, WORLD_H, WORLD_W, Dino,
+    DINO_DUCK_H, DINO_STAND_H, DINO_W, DINO_X, GROUND_TOP,
+    TRACK_H, TRACK_TILE_W, WORLD_H, WORLD_W, Dino,
 )
 from .views_layout import LayoutMixin
 from .views_pad import TouchPad
 
-# 复古配色
-BG = "#0d0d0d"
-GROUND = "#5a5a5a"
-DINO = "#f2f2f2"
-DINO_EYE = "#0d0d0d"
-CACTUS = "#43a047"
-BIRD = "#ff7043"
+# Chrome 恐龙原版配色：白天米白底 + #535353 精灵，夜里反过来
+DAY_BG = "#f7f7f7"
+NIGHT_BG = "#111318"
+DAY_OVERLAY = "#f7f7f7"
+NIGHT_OVERLAY = "#111318"
+CLOUD_NIGHT = "#7f8794"
+CLOUD_DAY = "#aeb3ba"   # 原生云是 #dadada，米白底上几乎看不见，白天略压深
 
-NARROW_W = 620         # 小于这个宽度按「手机竖屏」处理
+# 恐龙贴图宽高比（站立 / 下蹲两套），用来把不同帧摆进同一个视觉框，
+# 避免 DinoStart(97×101) 和 DinoRun1(87×94) 切帧时宽度跳一下。
+_DINO_RATIO = assets.sprite("dino_run1").w / assets.sprite("dino_run1").h
+_DUCK_RATIO = assets.sprite("dino_duck1").w / assets.sprite("dino_duck1").h
+# GameOver.png 最右侧 383~385 列有一条 24px 高的杂散竖线（素材自带），
+# 裁掉最后 4 列即可，字母 R 在 379 列就结束了。
+GAME_OVER_TRIM = 382.0 / 386.0
+
 INTERVAL = 0.03        # 主循环步进间隔（秒），与引擎 TICK_SECONDS 对齐
+
+
+def _make_image(key: str, w: float, h: float) -> ft.Image:
+    """造一张像素画贴图：硬边缩放 + 切帧不闪 + 素材缺失时纯色兜底。"""
+    return ft.Image(
+        src=assets.src(key), width=w, height=h,
+        fit=ft.BoxFit.FILL,
+        filter_quality=ft.FilterQuality.NONE,
+        gapless_playback=True,
+        error_content=ft.Container(bgcolor=assets.INK),
+    )
+
+
+def _make_clipped(key: str) -> Tuple[ft.Stack, ft.Image]:
+    """底部有透明留白的贴图（云 / 重置键）：外层 Stack 只裁出顶部内容。
+
+    用 ``ft.Stack`` 而不是 ``ft.Container``：Flutter 的 Container 只有带
+    decoration 时才创建 ClipPath，实测 ``clip_behavior`` 在这种纯布局用法下
+    不生效；Stack 的 HARD_EDGE 是确定会裁掉子控件溢出部分的。
+    """
+    inner = _make_image(key, 1.0, 1.0)
+    inner.left = 0
+    inner.top = 0
+    box = ft.Stack(width=1.0, height=1.0,
+                   clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                   controls=[inner])
+    return box, inner
+
+
+def _size_clipped(pair: Tuple[ft.Control, ft.Image], key: str, w: float) -> None:
+    """按宽度重算裁剪容器：外层只露内容，内层保持整张 PNG 的原始比例。"""
+    sp = assets.sprite(key)
+    box, img = pair
+    box.width = w
+    box.height = w / sp.ratio
+    img.width = w
+    img.height = w * sp.h / sp.w
+
+
+def _tint(img: ft.Image, night: bool, cloud: bool = False) -> None:
+    """夜景把深灰精灵换成浅色（SRC_IN 只给非透明像素上色）；白天用原生色。
+
+    云是唯一例外：白天也要压深一点，否则 #dadada 在米白底上几乎看不见。
+    """
+    if cloud:
+        img.color = CLOUD_NIGHT if night else CLOUD_DAY
+        img.color_blend_mode = ft.BlendMode.SRC_IN
+    else:
+        img.color = assets.INK_LIGHT if night else None
+        img.color_blend_mode = ft.BlendMode.SRC_IN if night else None
 
 
 class _PlayPage(LayoutMixin):
@@ -60,32 +128,65 @@ class _PlayPage(LayoutMixin):
         self._log_saved = False
         self.scale = 6.0
         self._touch = False
-        self._obstacle_ctrls: Dict[int, ft.Container] = {}
+        self._obstacle_ctrls: Dict[int, ft.Image] = {}
+        self._cloud_ctrls: Dict[int, Tuple[ft.Control, ft.Image]] = {}
+        self._night = False
         self._drag_from: Optional[float] = None
         self._tap_handled = False        # 同一次点击 on_tap_up / on_tap 只跳一次
 
         # —— 舞台（画布）——
-        self.ground_ctrl = ft.Container(bgcolor=GROUND)
-        self.dino_eye = ft.Container(bgcolor=DINO_EYE)
-        self.dino_ctrl = ft.Container(
-            bgcolor=DINO,
-            border_radius=2,
-            content=self.dino_eye,
-        )
+        # 两块地面贴图首尾相接，按 track_offset 平移，做出无限滚动的地面。
+        self.track_a = _make_image("track", 1.0, 1.0)
+        self.track_b = _make_image("track", 1.0, 1.0)
+        self.dino_img = _make_image("dino_start", 1.0, 1.0)
+
         self.overlay_text = ft.Text("", size=18, weight=ft.FontWeight.BOLD,
-                                   color=T.TEXT_PRIMARY, text_align=ft.TextAlign.CENTER)
+                                   color=assets.INK,
+                                   text_align=ft.TextAlign.CENTER)
+        self.game_over_img = _make_image("game_over", 1.0, 1.0)
+        self.game_over_img.left = 0
+        self.game_over_img.top = 0
+        self.game_over_box = ft.Stack(
+            width=1.0, height=1.0,
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+            controls=[self.game_over_img],
+        )
+        self.over_score = ft.Text("", size=13, color=assets.INK,
+                                  text_align=ft.TextAlign.CENTER)
+        self.reset_box, self.reset_img = _make_clipped("reset")
+        # 重置键素材是「深灰底 + 浅色箭头」。夜里若也用 SRC_IN 上色，
+        # 底和箭头会一起变白、箭头消失；所以外套一块浅色底片，贴图保持
+        # 原色（深浅对比靠底片提供），昼夜都能看清按钮。
+        self.reset_chip = ft.Container(
+            bgcolor=assets.INK_LIGHT, border_radius=8,
+            padding=ft.Padding.all(4), content=self.reset_box,
+        )
+        self.game_over_panel = ft.Column(
+            [self.game_over_box, ft.Container(height=8),
+             self.over_score, ft.Container(height=10), self.reset_chip],
+            spacing=0,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            visible=False,
+        )
         self.overlay = ft.Container(
-            bgcolor=ft.Colors.with_opacity(0.55, "#000000"),
+            bgcolor=ft.Colors.with_opacity(0.82, DAY_OVERLAY),
             alignment=ft.Alignment.CENTER,
-            content=self.overlay_text,
+            content=ft.Column(
+                [self.overlay_text, self.game_over_panel],
+                spacing=0,
+                # Column 默认 mainAxisSize.max 会撑满浮层高度，不设 CENTER
+                # 的话提示文字 / GAME OVER 会贴在舞台最顶上而不是居中。
+                alignment=ft.MainAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
             visible=False,
         )
         self.stack = ft.Stack(
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
-            controls=[self.ground_ctrl, self.dino_ctrl, self.overlay],
+            controls=[self.track_a, self.track_b, self.dino_img, self.overlay],
         )
         self.stage = ft.Container(
-            bgcolor=BG,
+            bgcolor=DAY_BG,
             border=ft.Border.all(2, T.BORDER),
             border_radius=6,
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
@@ -128,79 +229,147 @@ class _PlayPage(LayoutMixin):
         self.stage.height = sh
         self.stack.width = sw
         self.stack.height = sh
-        self.ground_ctrl.width = sw
-        self.ground_ctrl.top = GROUND_TOP * s
-        self.ground_ctrl.height = (WORLD_H - GROUND_TOP) * s
+        tile_w = TRACK_TILE_W * s
+        for tile in (self.track_a, self.track_b):
+            tile.width = tile_w
+            tile.height = TRACK_H * s
+            tile.top = GROUND_TOP * s
         self.overlay.width = sw
         self.overlay.height = sh
+        # 结束层按舞台宽度限幅，窄屏也不会顶出边界
+        gw = min(38.0 * s, sw * 0.72)
+        self.game_over_img.width = gw
+        self.game_over_img.height = gw * (40.0 / 386.0)
+        self.game_over_box.width = gw * GAME_OVER_TRIM
+        self.game_over_box.height = gw * (40.0 / 386.0)
+        _size_clipped((self.reset_box, self.reset_img), "reset",
+                      min(5.0 * s, sw * 0.12))
 
     # ---------- 画面 ----------
 
     def _render(self) -> None:
         s = self.scale
         e = self.engine
-        # 恐龙
-        dh = DINO_DUCK_H if e.ducking else DINO_STAND_H
-        self.dino_ctrl.left = DINO_X * s
-        self.dino_ctrl.top = e.dino_top * s
-        self.dino_ctrl.width = DINO_W * s
-        self.dino_ctrl.height = dh * s
-        # 眼睛（相对恐龙本体，靠右上）
-        ew = self.dino_ctrl.width * 0.22
-        eh = self.dino_ctrl.height * 0.22
-        self.dino_eye.width = ew
-        self.dino_eye.height = eh
-        self.dino_eye.left = self.dino_ctrl.width * 0.5
-        self.dino_eye.top = self.dino_ctrl.height * 0.16
+        night = bool(e.night)
+        ink = assets.INK_LIGHT if night else assets.INK
 
-        # 障碍（按对象 id 复用控件）
+        # 昼夜：只改舞台底色 / 贴图着色，不动素材文件
+        if night != self._night:
+            self._night = night
+            self.stage.bgcolor = NIGHT_BG if night else DAY_BG
+        # 待开始 / 暂停时只薄薄盖一层，别把恐龙和地面全糊掉；
+        # GAME OVER 时压深一点让字和重置键看得清。
+        over = not e.alive
+        self.overlay.bgcolor = ft.Colors.with_opacity(
+            0.72 if over else 0.45,
+            NIGHT_OVERLAY if night else DAY_OVERLAY)
+        for tile in (self.track_a, self.track_b):
+            _tint(tile, night)
+        _tint(self.game_over_img, night)   # 重置键保持原色，靠浅色底片衬出来
+
+        # 地面：两块贴图首尾相接，取模偏移保证无限无缝滚动
+        tile_w = TRACK_TILE_W * s
+        off = (e.track_offset * s) % tile_w
+        self.track_a.left = -off
+        self.track_b.left = tile_w - off
+
+        # 云（按对象 id 复用裁剪容器）
+        live_clouds = set()
+        children = []
+        for c in e.clouds:
+            cid = id(c)
+            live_clouds.add(cid)
+            pair = self._cloud_ctrls.get(cid)
+            if pair is None:
+                pair = _make_clipped("cloud")
+                self._cloud_ctrls[cid] = pair
+            box, img = pair
+            _size_clipped(pair, "cloud", c.w * s)
+            _tint(img, night, cloud=True)
+            box.left = c.x * s
+            box.top = c.y * s
+            children.append(box)
+        for cid in list(self._cloud_ctrls):
+            if cid not in live_clouds:
+                del self._cloud_ctrls[cid]
+        children.extend((self.track_a, self.track_b))
+
+        # 障碍：贴图与碰撞框同宽高，variant 决定用哪张仙人掌
         live_ids = set()
-        new_children = [self.ground_ctrl]
         for o in e.obstacles:
             oid = id(o)
             live_ids.add(oid)
             ctrl = self._obstacle_ctrls.get(oid)
             if ctrl is None:
-                ctrl = ft.Container(border_radius=2)
+                ctrl = _make_image(o.variant if o.kind == "cactus" else "bird1",
+                                   1.0, 1.0)
                 self._obstacle_ctrls[oid] = ctrl
-            ctrl.bgcolor = BIRD if o.kind == "bird" else CACTUS
+            wanted = (assets.cactus_src(o.variant) if o.kind == "cactus"
+                      else assets.bird_src((e.tick // 8) % 2))
+            if ctrl.src != wanted:
+                ctrl.src = wanted
+            _tint(ctrl, night)
             ctrl.left = o.x * s
             ctrl.top = o.y * s
             ctrl.width = o.w * s
             ctrl.height = o.h * s
-            new_children.append(ctrl)
-        # 清理已消失的障碍控件
-        for oid in list(self._obstacle_ctrls.keys()):
+            children.append(ctrl)
+        for oid in list(self._obstacle_ctrls):
             if oid not in live_ids:
                 del self._obstacle_ctrls[oid]
-        new_children.append(self.dino_ctrl)
-        new_children.append(self.overlay)
-        self.stack.controls = new_children
 
-        # 信息
-        self.score_text.value = str(int(e.score))
-        self.best_text.value = str(max(self._best, int(e.score)))
+        # 恐龙：底边对齐碰撞框底边、左右居中；帧由 tick 驱动
+        if not e.started:
+            state = "start"
+        elif not e.alive:
+            state = "dead"
+        elif not e.on_ground:
+            state = "jump"
+        elif e.ducking:
+            state = "duck"
+        else:
+            state = "run"
+        wanted = assets.dino_src(state, (e.tick // 6) % 2)
+        if self.dino_img.src != wanted:
+            self.dino_img.src = wanted
+        _tint(self.dino_img, night)
+        dh = DINO_DUCK_H if e.ducking else DINO_STAND_H
+        vh = dh * s
+        vw = vh * (_DUCK_RATIO if e.ducking else _DINO_RATIO)
+        self.dino_img.width = vw
+        self.dino_img.height = vh
+        self.dino_img.left = DINO_X * s + (DINO_W * s - vw) / 2
+        self.dino_img.top = (e.dino_top + dh) * s - vh
+        children.append(self.dino_img)
+        children.append(self.overlay)
+        self.stack.controls = children
+
+        # 信息（原版是 5 位补零分数）
+        self.score_text.value = str(int(e.score)).zfill(5)
+        self.best_text.value = str(max(self._best, int(e.score))).zfill(5)
         self.speed_text.value = f"{e.speed:.1f}"
+        self.game_over_panel.visible = over
+        self.overlay_text.visible = not over
+        self.overlay_text.color = ink
+        self.over_score.color = ink
+        if over:
+            self.over_score.value = (
+                f"{int(e.score)}  ·  "
+                f"{t('dino.restart_hint', default='点击 / R 重开')}")
         if not e.started:
             self.status_text.value = ""
             self.overlay.visible = True
             self.overlay_text.value = t("dino.start_hint",
                                        default="空格 / 点击 开始")
-            self.overlay_text.color = T.TEXT_PRIMARY
-        elif not e.alive:
+        elif over:
             self.status_text.value = t("dino.over", default="游戏结束")
             self.status_text.color = T.DANGER
             self.overlay.visible = True
-            self.overlay_text.value = (
-                t("dino.over", default="游戏结束")
-                + f"\n{int(e.score)}  ·  {t('dino.restart_hint', default='R / 点击 重开')}")
-            self.overlay_text.color = T.DANGER
         elif e.paused:
             self.status_text.value = t("dino.paused", default="已暂停")
             self.status_text.color = T.WARNING
             self.overlay.visible = True
             self.overlay_text.value = t("dino.paused", default="已暂停")
-            self.overlay_text.color = T.WARNING
         else:
             self.status_text.value = ""
             self.overlay.visible = False
@@ -345,9 +514,10 @@ class _PlayPage(LayoutMixin):
             self._task = None
 
     def _on_resize(self, *_args):
-        """屏幕尺寸变了：重算舞台尺寸（兼容事件对象与 (w, h) 两种签名）。"""
+        """屏幕尺寸变了：重算舞台尺寸；宽窄模式切换时原地换一套排版。"""
         self._layout()
         self._apply_stage_size()
+        self._reflow()
         self._refresh()
 
     def _detach(self):
@@ -378,6 +548,7 @@ class _PlayPage(LayoutMixin):
             self.engine.start()
         self._log_saved = False
         self._obstacle_ctrls.clear()
+        self._cloud_ctrls.clear()
         self._refresh()
 
     def _toggle_pause(self):

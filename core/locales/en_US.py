@@ -100,11 +100,12 @@ STRINGS: dict[str, str] = {
 
     # ---------------- billiards ----------------
     "billiards.local": "Start a match",
-    "billiards.local_desc": "Drag the cue ball back to shoot; in a LAN room "
-                            "players 1 and 2 are assigned by seat",
+    "billiards.local_desc": "Slingshot or dial to shoot; add follow, draw "
+                            "and english to control the cue ball",
     "billiards.howto": "How to play",
     "billiards.howto_desc": "Simplified Chinese eight-ball: the first ball "
-                            "you pot picks your group, then the 8-ball",
+                            "you pot picks your group, then the 8-ball; "
+                            "follow, draw and english all work",
     "billiards.history": "History",
     "billiards.history_desc": "Look back at previous games (saved "
                                "automatically when a game ends)",
@@ -138,10 +139,22 @@ STRINGS: dict[str, str] = {
     "billiards.hint_wait": "Waiting for the other player",
     "billiards.angle": "Angle",
     "billiards.force": "Force (N)",
+    "billiards.force_input": "Type force 0-200",
     "billiards.shoot": "Shoot",
     "billiards.angle_deg": "Angle {deg:.0f}°",
-    "billiards.control_hint": "Dial sets direction, bar sets force (0-75 N), "
-                             "press Shoot",
+    "billiards.control_hint": "Dial sets direction, bar sets force, the cue "
+                             "tip disc sets spin, then press Shoot",
+    "billiards.spin": "Cue tip",
+    "billiards.spin_hint": "Drag the red dot: up = follow, down = draw, "
+                           "left/right = english (bends the rebound). "
+                           "Resets to center after each shot",
+    "billiards.spin_readout": "Spin: {v}",
+    "billiards.tip_center": "Center",
+    "billiards.tip_follow": "Follow",
+    "billiards.tip_draw": "Draw",
+    "billiards.tip_left": "Left",
+    "billiards.tip_right": "Right",
+    "billiards.tip_neutral": "Center (no spin)",
 
     # ---------------- profile ----------------
     "profile.title": "Me",
@@ -418,4 +431,100 @@ STRINGS: dict[str, str] = {
                                "the horse steps, the elephant flies.",
     "chinese_chess.stub": "Chinese Chess is in the works: board, move rules "
                           "and an AI opponent are on the way.",
+
+    # ---------------- game: Minesweeper (0.4.10) ----------------
+    "route.minesweeper": "Minesweeper",
+    "route.minesweeper.desc": "Classic minesweeper: safe first click, right-click "
+                              "flags, three difficulty levels",
+    "route.minesweeper.play": "Minesweeper · Board",
+    "minesweeper.easy": "Beginner",
+    "minesweeper.easy_desc": "9x9 / 10 mines · start here",
+    "minesweeper.medium": "Intermediate",
+    "minesweeper.medium_desc": "16x16 / 40 mines · a real challenge",
+    "minesweeper.hard": "Expert",
+    "minesweeper.hard_desc": "16x30 / 99 mines · scroll sideways on a phone",
+    "minesweeper.level_easy": "Beginner",
+    "minesweeper.level_medium": "Intermediate",
+    "minesweeper.level_hard": "Expert",
+    "minesweeper.level": "Difficulty",
+    "minesweeper.remaining": "Mines left",
+    "minesweeper.time": "Time",
+    "minesweeper.restart": "Restart",
+    "minesweeper.history": "History",
+    "minesweeper.history_desc": "Past results and times (saved on win or loss)",
+    "minesweeper.howto": "How to play",
+    "minesweeper.howto_desc": "Left-click to reveal, right-click to flag; on a "
+                              "phone long-press or turn on Flag mode; R restarts",
+    "minesweeper.keyboard_hint": "Left-click reveals / right-click flags · R "
+                                 "restarts · F toggles Flag · 1/2/3 changes level",
+    "minesweeper.touch_hint": "Long-press a cell to flag; expert boards scroll",
+    "minesweeper.hint_start": "Click any cell to start (the first click is safe)",
+    "minesweeper.win": "Board cleared!",
+    "minesweeper.over": "Boom! Mine hit",
+    "minesweeper.flag_on": "Flag mode: ON",
+    "minesweeper.flag_off": "Flag mode: OFF",
+    "minesweeper.time_suffix": "in {time}",
+
+    # ---------------- game: Pinball (0.4.10) ----------------
+    "route.pinball": "Pinball",
+    "route.pinball.desc": "Retro pinball: charge the plunger, save the ball "
+                          "with two flippers, score on bumpers",
+    "route.pinball.play": "Pinball · Match",
+    "pinball.start": "Start game",
+    "pinball.start_desc": "Charge and launch, save the ball, hit bumpers and "
+                          "slingshots for points",
+    "pinball.history": "History",
+    "pinball.history_desc": "Past scores and personal best (auto-saved after "
+                            "three drained balls)",
+    "pinball.howto": "How to play",
+    "pinball.howto_desc": "Left/Right or A/D flip, Space charges the plunger, "
+                          "P pauses, R restarts",
+    "pinball.score": "Score",
+    "pinball.best": "Best",
+    "pinball.balls": "Balls left",
+    "pinball.pause": "Pause",
+    "pinball.resume": "Resume",
+    "pinball.restart": "Restart",
+    "pinball.restart_hint": "R / Restart to play again",
+    "pinball.over": "Game over",
+    "pinball.paused": "Paused",
+    "pinball.playing": "In play",
+    "pinball.waiting": "Ready to launch",
+    "pinball.charging": "Charging…",
+    "pinball.launch_hint": "Hold Launch to charge, release to fire / Space "
+                           "charges and fires automatically",
+    "pinball.left": "Left flip",
+    "pinball.plunge": "Launch",
+    "pinball.right": "Right flip",
+    "pinball.keyboard_hint": "Left/Right or A/D flips, Space charges the plunger",
+    "pinball.touch_hint": "P pauses · R restarts · use the buttons on a phone",
+    "pinball.best_suffix": "best {best}",
+    "pinball.hits_suffix": "{hits} hits",
+
+    # ---------------- Dino ----------------
+    "route.dino": "Dino",
+    "route.dino.desc": "Chrome offline dino: jump cacti, duck under birds, auto speed-up",
+    "route.dino.play": "Dino · Run",
+    "dino.title": "Dino",
+    "dino.start": "Start run",
+    "dino.start_desc": "Original pixel art: leap cacti, duck birds, speed ramps up and night falls",
+    "dino.history": "History",
+    "dino.history_desc": "Best runs are saved automatically after each game",
+    "dino.howto": "How to play",
+    "dino.howto_desc": "Space/Up jumps, Down ducks; on phone tap to jump, swipe down to duck",
+    "dino.score": "Score",
+    "dino.best": "Best",
+    "dino.speed": "Speed",
+    "dino.pause": "Pause",
+    "dino.resume": "Resume",
+    "dino.restart": "Restart",
+    "dino.duck": "Duck",
+    "dino.jump": "Jump",
+    "dino.start_hint": "Space / Tap to start",
+    "dino.over": "Game over",
+    "dino.restart_hint": "Tap / R to restart",
+    "dino.paused": "Paused",
+    "dino.touch_hint": "Tap to jump, swipe down to duck; hold Duck below",
+    "dino.best_suffix": "best {best}",
+    "dino.speed_suffix": "speed {speed}",
 }

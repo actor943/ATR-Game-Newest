@@ -26,6 +26,7 @@ flet 1.0 的 ``Container`` 没有 ``on_pan_*``，拖拽手势统一走
 
 from __future__ import annotations
 
+import math
 from typing import Callable, Dict, List, Optional, Tuple
 
 import flet as ft
@@ -34,15 +35,20 @@ from .assets import (
     TABLE_GREEN, TABLE_IMAGE, TABLE_IMAGE_SIZE, ball_image_src,
 )
 from .engine import BilliardsEngine
-from .physics import Ball
+from .physics import TIP_RADIUS, Ball
 
 # ============================================================
 # 配色
 # ============================================================
 
 FELT_EDGE = "#2E8B57"     # 开球线
-GUIDE = "#FFFFFF"         # 瞄准线
+GUIDE = "#FFFFFF"         # 瞄准线（中杆）
 CUE_MARK = "#FFFFFF99"    # 母球标记点
+SPIN_FOLLOW = "#FFC857"   # 高杆：瞄准线偏暖
+SPIN_DRAW = "#66B2FF"     # 低杆：偏冷
+SPIN_SIDE = "#D79BFF"     # 加塞：紫
+TIP_DOT = "#D64545"       # 母球上的杆法指示点
+TIP_DOT_D = 8.0           # 指示点直径
 
 MAX_AIM_DOTS = 22         # 瞄准线最多几个点
 
@@ -73,6 +79,10 @@ class TableView:
         self._aim_dots: List[ft.Container] = []
         self._stack: Optional[ft.Stack] = None
         self._pending: List[ft.Container] = []   # 球桌还没建好时先攒着
+        # 杆法指示：母球上那个小红点 + 瞄准线配色
+        self._tip_dot: Optional[ft.Container] = None
+        self._tip: Tuple[float, float] = (0.0, 0.0)     # (高低杆, 加塞)
+        self._tip_dir: Tuple[float, float] = (1.0, 0.0)  # 出杆方向（单位）
 
     # ============================================================
     # 组装
@@ -98,6 +108,11 @@ class TableView:
         layers.append(ft.Container(left=t.head_x - 0.5, top=0, width=1,
                                    height=t.height, bgcolor=FELT_EDGE))
         layers.append(ft.Container(left=t.head_x - 3, top=t.head_y - 3,
+                                   width=6, height=6, bgcolor=CUE_MARK,
+                                   border_radius=3))
+        # 脚点（摆球区前沿，台面 3/4 处）：真实球桌上也有的小贴纸标记，
+        # 球堆顶点就压在它上面，方便一眼看出摆球位置是否符合真实比例
+        layers.append(ft.Container(left=t.foot_x - 3, top=t.head_y - 3,
                                    width=6, height=6, bgcolor=CUE_MARK,
                                    border_radius=3))
 
@@ -167,14 +182,77 @@ class TableView:
             ctrl.left = ball.x - ball.radius
             ctrl.top = ball.y - ball.radius
             ctrl.visible = ball.active
+        self._sync_tip()
         self._sync_aim()
 
     def _make_ball(self, ball: Ball) -> ft.Container:
-        """画一颗球（用 assets 里的球贴图）。"""
+        """画一颗球（用 assets 里的球贴图）。
+
+        母球额外套一层 ``ft.Stack`` 放杆法指示点：这样红点跟着母球容器
+        一起移动，且永远画在球贴图上面，不用每帧调整整张球桌的层级。
+        """
         d = ball.radius * 2
         img = ft.Image(src=ball_image_src(ball.number), width=d, height=d,
                        fit=ft.BoxFit.CONTAIN)
-        return ft.Container(width=d, height=d, content=img)
+        if ball.number != 0:
+            return ft.Container(width=d, height=d, content=img)
+        self._tip_dot = ft.Container(
+            width=TIP_DOT_D, height=TIP_DOT_D, bgcolor=TIP_DOT,
+            border_radius=TIP_DOT_D / 2,
+            border=ft.Border.all(1.5, "#FFFFFF"),
+            left=d / 2 - TIP_DOT_D / 2, top=d / 2 - TIP_DOT_D / 2,
+        )
+        return ft.Container(
+            width=d, height=d,
+            content=ft.Stack([img, self._tip_dot], width=d, height=d),
+        )
+
+    # ============================================================
+    # 杆法指示（高低杆 / 加塞）
+    # ============================================================
+
+    def set_tip(self, top: float, side: float,
+                dx: float = 1.0, dy: float = 0.0) -> None:
+        """设定当前杆法，并给瞄准线换色。
+
+        桌面是俯视图，而球杆接触面的「上/下」其实是竖直方向（球的高低），
+        所以母球上这个红点是**走位提示**而不是严格的 3D 触点投影：
+        沿出杆方向向前 = 高杆会跟进，向后 = 低杆会回缩，垂直于出杆方向
+        向右 = 右塞。真正的击球点在 :class:`views_controls.SpinDial` 上选。
+        """
+        self._tip = (float(top), float(side))
+        n = math.hypot(dx, dy) or 1.0
+        self._tip_dir = (dx / n, dy / n)
+        top, side = self._tip
+        if abs(side) > 0.15:
+            color = SPIN_SIDE
+        elif top > 0.15:
+            color = SPIN_FOLLOW
+        elif top < -0.15:
+            color = SPIN_DRAW
+        else:
+            color = GUIDE
+        for dot in self._aim_dots:
+            dot.bgcolor = color
+        self._sync_tip()
+
+    def _sync_tip(self) -> None:
+        """把红点摆到母球上（球容器内的局部坐标）。"""
+        if self._tip_dot is None:
+            return
+        cue = self.engine.cue
+        if cue is None:
+            self._tip_dot.visible = False
+            return
+        self._tip_dot.visible = cue.active
+        top, side = self._tip
+        dx, dy = self._tip_dir
+        rx, ry = -dy, dx               # 出杆方向右手边（屏幕 y 向下）
+        off = cue.radius * TIP_RADIUS
+        ox = (top * dx + side * rx) * off
+        oy = (top * dy + side * ry) * off
+        self._tip_dot.left = cue.radius + ox - TIP_DOT_D / 2
+        self._tip_dot.top = cue.radius + oy - TIP_DOT_D / 2
 
     # ============================================================
     # 瞄准线
