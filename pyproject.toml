@@ -3,7 +3,16 @@ name = "atr-game"
 version = "0.4.10"
 description = "ATR Game — 牌类游戏合集（掼蛋 / Splendor / Chess / Chinese Chess）"
 readme = "README.txt"
-requires-python = ">=3.10"
+# ⚠ 这个区间同时决定 `flet build` 往包里塞哪个 Python 运行时：
+#   flet_cli.utils.python_versions.resolve_python_version() 会按
+#   requires-python 挑「最高的、满足区间的、受支持的」版本，当前可选
+#   3.12 / 3.13 / 3.14。这里刻意排除 3.14：内置音乐用的 pygame 在 PyPI
+#   上**没有 cp314 的预编译 wheel**，GitHub CI 上没有 SDL2 头文件，
+#   pip 退回源码编译就会报 `SDL.h file not found`（2026-11-21 实测）。
+#   3.13 四个桌面平台（macOS arm64/x64、Windows x64、Linux x64）都有
+#   pygame 2.6.1 的 wheel，直接下载安装，构建不再依赖系统 SDL2。
+#   源码运行仍然支持 3.10+；这个上限只影响打包。
+requires-python = ">=3.10,<3.14"
 dependencies = [
     # ⚠ 这个 pin 决定「打包进 .app 的 Python 运行时版本」（flet build 会把
     #   project.dependencies 转成 requirements 装进 bundle），必须与 app 代码

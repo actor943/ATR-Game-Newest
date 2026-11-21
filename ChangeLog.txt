@@ -1,5 +1,17 @@
 Version: 0.4.10
 
+0.4.10-修正（`flet build macos` 挂在 pygame 源码编译）:
+原因：`flet build` 默认按 requires-python 选**最高**的受支持运行时，即
+	Python 3.14；pygame 2.6.1 在 PyPI 上只有到 cp313 的 wheel，3.14
+	会退回源码编译，而 GitHub macOS runner 没有 SDL2 头文件，于是
+	`src_c/_sdl2/sdl2.c: SDL.h file not found`，构建失败（本机开发
+	venv 装了 SDL2 所以没复现）
+修正：pyproject.toml 的 requires-python 改成 `>=3.10,<3.14`，flet build
+	现在选 Python 3.13；已验证 pygame 2.6.1 在 macOS arm64/x64、
+	Windows x64、Linux x64 都有 cp313 wheel，安装不再需要 SDL2
+	CI workflow 与 README / requirements 同步注明这个上限只影响打包，
+	源码运行仍支持 3.10+
+
 0.4.10-修正（内置音乐：点「🎵 音乐」没反应）:
 原因一：flet 1.0 的 ``Page.overlay`` 是只读属性，旧代码给它整体赋值，
 	被 except 吞掉后悬浮窗从未真正挂到页面上，所以点图标毫无反应。

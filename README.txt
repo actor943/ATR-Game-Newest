@@ -126,6 +126,10 @@ ATR Game V0.4.10
 	等价手动命令：
 		./.venv/bin/python -c "import sys;sys.argv[0]='flet';from flet.cli import main;main()" \
 			build apk --yes
+	打包运行时（0.4.10 内置音乐后）：pyproject.toml 的 requires-python
+		锁在 >=3.10,<3.14，flet build 会选 Python 3.13 装进包里 ——
+		pygame 在 PyPI 上没有 cp314 的预编译 wheel，用 3.14 打包会在
+		CI 上退回源码编译并因缺 SDL.h 失败；源码运行仍支持 3.10+
 	各平台还差什么（本机 2026-10-17 实测）：
 		apk / aab：flet 会自动装 Flutter + JDK17 + AndroidSDK，
 			但 GitHub 在国内不通，JDK 要先走镜像放好：
