@@ -203,6 +203,17 @@ class FloatingPlayer:
                               spacing=0),
             visible=self.visible,
         )
+        # 播放器被收起时留一个全局小入口：它同样挂在 page.overlay 上，
+        # 所以在任何游戏页都能点开音乐，不用退回主菜单。
+        self.handle = ft.Container(
+            width=42, height=42,
+            border_radius=21,
+            alignment=ft.Alignment.CENTER,
+            content=ft.Text("🎵", size=19),
+            ink=True,
+            on_click=self._on_handle_click,
+            visible=not self.visible,
+        )
         self._refresh()
 
     def _build_track_rows(self) -> None:
@@ -242,8 +253,9 @@ class FloatingPlayer:
         """
         try:
             overlay = self.page.overlay
-            if self.root not in overlay:
-                overlay.append(self.root)
+            for control in (self.root, self.handle):
+                if control not in overlay:
+                    overlay.append(control)
             self.page.update()
         except Exception as exc:            # noqa: BLE001 — 测试桩可能没 overlay
             print(f"[music] 悬浮窗挂载失败：{exc!r}")
@@ -262,9 +274,10 @@ class FloatingPlayer:
             self._task = None
         try:
             overlay = self.page.overlay
-            if self.root in overlay:
-                overlay.remove(self.root)
-                self.page.update()
+            for control in (self.root, self.handle):
+                if control in overlay:
+                    overlay.remove(control)
+            self.page.update()
         except Exception:                   # noqa: BLE001
             pass
 
@@ -377,15 +390,18 @@ class FloatingPlayer:
         self._tracks_label.value = t("music.library", count=len(player.tracks))
 
         if not player.available:
-            self.hint.value = t("music.unavailable", reason=player.reason)
+            hint = t("music.unavailable", reason=player.reason)
         elif player.playing and player.paused:
-            self.hint.value = t("music.paused")
+            hint = t("music.paused")
         elif duration > 0 and not player.seekable:
-            self.hint.value = t("music.seek_unsupported")
+            hint = t("music.seek_unsupported")
         elif player.playing:
-            self.hint.value = t("music.playing_hint")
+            hint = t("music.playing_hint")
         else:
-            self.hint.value = t("music.drag_hint")
+            hint = t("music.drag_hint")
+        if player.backend_name == "system":
+            hint = t("music.system_backend") + " · " + hint
+        self.hint.value = hint
 
         # 主题 / 语言变化后重新取色与文案（不重建控件树）
         self._apply_style()
@@ -408,6 +424,12 @@ class FloatingPlayer:
         self.root.width = min(self.EXPANDED_W if self.expanded
                               else self.COMPACT_W,
                               max(200, responsive.page_width(self.page) - 24))
+        # 收起状态：右上角留一个音符按钮，任何页面（含全屏对局）都能点开
+        self.handle.visible = not self.visible
+        self.handle.bgcolor = T.SURFACE
+        self.handle.border = ft.Border.all(1, T.PRIMARY)
+        self.handle.left = max(0.0, responsive.page_width(self.page) - 58)
+        self.handle.top = 16.0
         play_tip = t("music.play" if not (
             self.player.playing and not self.player.paused) else "music.pause")
         expand_tip = t("music.expand" if not self.expanded
@@ -488,6 +510,10 @@ class FloatingPlayer:
 
     def _on_hide(self, _e=None) -> None:
         self.hide()
+
+    def _on_handle_click(self, _e=None) -> None:
+        """点右上角音符：在任何游戏页都能重新展开播放器。"""
+        self.show(expanded=True)
 
     def _on_seek_start(self, _e=None) -> None:
         self._scrubbing = True

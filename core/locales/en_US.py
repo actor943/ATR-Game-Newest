@@ -547,6 +547,7 @@ STRINGS: dict[str, str] = {
     "music.drag_hint": "Drag the title to move; expand for volume and songs",
     "music.playing_hint": "Playing · keeps going in every mini-game",
     "music.seek_unsupported": "Seeking is unavailable for this format; volume and track controls still work",
+    "music.system_backend": "System audio mode",
     "music.paused": "Paused",
     "music.unavailable": "Music playback unavailable: {reason}",
     "settings.section_music": "Music",

@@ -1,16 +1,38 @@
 Version: 0.4.10
 
+0.4.10-修正（装机版 mac app 音乐报 dlopen 失败）:
+现象：源码运行能放，打包后的 ATR Game.app 里播放器提示
+	「当前设备无法播放音乐：dlopen(...serious_python_darwin.bundle...)」；
+	pygame-ce 自带的 libSDL2*.dylib 被 serious_python 搬进 bundle 后加载不了
+修正：新增 core/music/system_backend.py —— macOS 改用系统 afconvert 把 mp3
+	转成临时 WAV（3 分钟曲约 0.7 秒 / 33MB，只缓存最近 3 首），再用已经
+	能正常打包的 sounddevice + numpy 按块播 PCM；暂停 / 继续 / 音量 /
+	拖动进度都是真的有效，界面会标注「系统音频模式」
+	pyproject.toml 的 macOS 依赖表去掉 pygame-ce，app 里不再带那套
+	有问题的 SDL 动态库（顺带省 ~16MB）；Windows / Linux 仍用 pygame-ce
+	MusicPlayer 两级兜底：pygame 初始化失败、或 init 过了但 load 时
+	dlopen 失败，都会自动切到系统音频；自检模拟导入失败验证该路径
+	自检 4/4、i18n 审计通过
+
+0.4.10-优化（音乐播放器：全部游戏内都能打开）:
+新增：收起播放器后会在右上角保留一个 🎵 小按钮，它和播放器一起挂在
+	page.overlay 上，所以在任何游戏 / 房间页都能点开音乐，不必退回主菜单；
+	小按钮与播放器显隐互补，主题配色跟着 T 动态更新
+自检：FakePage 覆盖小按钮的挂载、显隐切换与点击重新展开
+
 0.4.10-修正（`flet build macos` 挂在 pygame 源码编译）:
 原因：`flet build` 默认按 requires-python 选**最高**的受支持运行时，即
-	Python 3.14；pygame 2.6.1 在 PyPI 上只有到 cp313 的 wheel，3.14
-	会退回源码编译，而 GitHub macOS runner 没有 SDL2 头文件，于是
-	`src_c/_sdl2/sdl2.c: SDL.h file not found`，构建失败（本机开发
-	venv 装了 SDL2 所以没复现）
-修正：pyproject.toml 的 requires-python 改成 `>=3.10,<3.14`，flet build
-	现在选 Python 3.13；已验证 pygame 2.6.1 在 macOS arm64/x64、
-	Windows x64、Linux x64 都有 cp313 wheel，安装不再需要 SDL2
-	CI workflow 与 README / requirements 同步注明这个上限只影响打包，
-	源码运行仍支持 3.10+
+	Python 3.14；原版 pygame 2.6.1 在 PyPI 上只有到 cp313 的 wheel，
+	3.14 会退回源码编译，而 GitHub macOS runner 没有 SDL2 头文件，
+	于是 `src_c/_sdl2/sdl2.c: SDL.h file not found`，构建失败（本机
+	开发 venv 装了 SDL2 所以没复现）
+第一次尝试：把 requires-python 限到 `<3.14` 让 Flet 选 3.13 —— CI 仍按
+	3.14 构建，说明这条路不可靠，已撤销该限制
+最终修正：音频依赖换成 `pygame-ce>=2.5`（pygame 的社区维护 fork，
+	导入名仍是 `pygame`，代码一行不用改）。已验证 pygame-ce 2.5.8
+	在 macOS arm64/x64、Windows x64、Linux x64 都有 cp314 预编译
+	wheel，直接安装，不再需要系统 SDL2；requires-python 恢复 >=3.10
+	pyproject / requirements / CI 注释 / README 同步更新
 
 0.4.10-修正（内置音乐：点「🎵 音乐」没反应）:
 原因一：flet 1.0 的 ``Page.overlay`` 是只读属性，旧代码给它整体赋值，

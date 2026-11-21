@@ -3,16 +3,7 @@ name = "atr-game"
 version = "0.4.10"
 description = "ATR Game — 牌类游戏合集（掼蛋 / Splendor / Chess / Chinese Chess）"
 readme = "README.txt"
-# ⚠ 这个区间同时决定 `flet build` 往包里塞哪个 Python 运行时：
-#   flet_cli.utils.python_versions.resolve_python_version() 会按
-#   requires-python 挑「最高的、满足区间的、受支持的」版本，当前可选
-#   3.12 / 3.13 / 3.14。这里刻意排除 3.14：内置音乐用的 pygame 在 PyPI
-#   上**没有 cp314 的预编译 wheel**，GitHub CI 上没有 SDL2 头文件，
-#   pip 退回源码编译就会报 `SDL.h file not found`（2026-11-21 实测）。
-#   3.13 四个桌面平台（macOS arm64/x64、Windows x64、Linux x64）都有
-#   pygame 2.6.1 的 wheel，直接下载安装，构建不再依赖系统 SDL2。
-#   源码运行仍然支持 3.10+；这个上限只影响打包。
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.10"
 dependencies = [
     # ⚠ 这个 pin 决定「打包进 .app 的 Python 运行时版本」（flet build 会把
     #   project.dependencies 转成 requirements 装进 bundle），必须与 app 代码
@@ -36,17 +27,22 @@ dependencies = [
 # ---------------------------------------------------------------
 
 [tool.flet.macos]
-dependencies = ["numpy>=1.26", "sounddevice>=0.4.6", "pygame>=2.5"]
+# macOS 不装 pygame-ce：它自带的 libSDL2*.dylib 被 serious_python 搬进 app
+# bundle 后会 dlopen 失败（装机版播放器报「当前设备无法播放音乐」）。
+# core/music/system_backend.py 改用系统 afconvert + sounddevice，实测可用，
+# 还省掉 ~16MB 的 SDL 动态库。Windows / Linux 继续用 pygame-ce。
+dependencies = ["numpy>=1.26", "sounddevice>=0.4.6"]
 
 [tool.flet.windows]
-dependencies = ["numpy>=1.26", "sounddevice>=0.4.6", "pygame>=2.5"]
+dependencies = ["numpy>=1.26", "sounddevice>=0.4.6", "pygame-ce>=2.5"]
 
 [tool.flet.linux]
-dependencies = ["numpy>=1.26", "sounddevice>=0.4.6", "pygame>=2.5"]
+dependencies = ["numpy>=1.26", "sounddevice>=0.4.6", "pygame-ce>=2.5"]
 
-# 内置音乐播放器（core/music）：flet 1.0 没有 Audio 控件，mp3 由 Python 侧
-# pygame.mixer 播放，Flet 侧只画悬浮窗。pygame 只在桌面包里装：Android/iOS
-# 没有对应 wheel，手机端会自动降级（界面提示原因，游戏照常可用）。
+# 内置音乐播放器（core/music）：flet 1.0 没有 Audio 控件，mp3 在 Python 侧
+# 播放，Flet 侧只画悬浮窗。Windows / Linux 用 pygame-ce（pygame 的社区维护
+# fork，导入名仍是 pygame、API 兼容，且有 cp314 预编译 wheel，不需要系统
+# SDL2）；macOS 走 core/music/system_backend.py 的系统音频方案。手机端优雅降级。
 
 # macOS 麦克风权限：没有这条键，系统会**直接拒绝**录音（连授权弹窗都不弹），
 # 分发版里语音等于废掉 —— 库装齐了也不够，权限说明必须一起给。

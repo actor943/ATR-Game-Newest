@@ -15,6 +15,7 @@ pygame 是可选依赖：没装或声卡打不开时全部操作安全降级，�
 from __future__ import annotations
 
 import os
+import platform
 import time
 from typing import Callable, Optional
 
@@ -37,6 +38,7 @@ class MusicPlayer:
         self._reason = ""
         self._backend_checked = False
         self._backend_ok = False
+        self._backend_name = ""
         self._seekable: Optional[bool] = None
         self._pygame = None
         self._started_at = 0.0
@@ -98,6 +100,12 @@ class MusicPlayer:
         self._ensure_backend()
         return self._reason
 
+    @property
+    def backend_name(self) -> str:
+        """当前实际使用的后端：``pygame`` / ``system`` / ``""``。"""
+        self._ensure_backend()
+        return self._backend_name
+
     def position(self) -> float:
         """当前播放位置（秒）。"""
         music = self._music()
@@ -109,7 +117,15 @@ class MusicPlayer:
             return 0.0
 
     def duration(self) -> float:
-        """当前曲目的近似时长（秒）。"""
+        """当前曲目时长（秒）：系统后端用 WAV 精确值，否则用 mp3 估算。"""
+        music = self._music()
+        if music is not None and hasattr(music, "get_length"):
+            try:
+                exact = float(music.get_length())
+                if exact > 0:
+                    return exact
+            except Exception:                 # noqa: BLE001
+                pass
         track = self.current
         return track.duration if track else 0.0
 
@@ -138,7 +154,8 @@ class MusicPlayer:
 
     # ---------- 播放控制 ----------
 
-    def play(self, index: Optional[int] = None, start: float = 0.0) -> bool:
+    def play(self, index: Optional[int] = None, start: float = 0.0,
+             *, _retried: bool = False) -> bool:
         """播放指定曲目（默认当前曲）；成功返回 True。"""
         if not self._tracks:
             self._reason = "assets/songs 里没有找到 mp3"
@@ -163,8 +180,13 @@ class MusicPlayer:
             self.persist()
             self.notify()
             return True
-        except Exception as exc:            # noqa: BLE001 — 坏文件 / 设备被占用
+        except Exception as exc:            # noqa: BLE001 — 坏文件 / dlopen 失败
             self._reason = str(exc) or type(exc).__name__
+            # 有些打包环境里 pygame.mixer.init() 能过，真正 load 时才 dlopen
+            # 失败。这时再兜一次系统音频后端，别让用户对着错误提示干瞪眼。
+            if (not _retried and self._backend_name == "pygame"
+                    and self._use_system_backend(self._reason)):
+                return self.play(index, start, _retried=True)
             self._playing = False
             self._paused = False
             self.notify()
@@ -329,7 +351,13 @@ class MusicPlayer:
     # ---------- 后端与偏好 ----------
 
     def _ensure_backend(self) -> bool:
-        """懒加载 pygame.mixer；失败时记录原因供界面提示。"""
+        """懒加载音频后端：先试 pygame，macOS 失败再走系统音频。
+
+        打包后的 macOS app 里 pygame(-ce) 自带的 ``libSDL2*.dylib`` 可能
+        被 serious_python 搬进 bundle 后加载失败（dlopen 报错）。这时改用
+        :mod:`core.music.system_backend`：afconvert + sounddevice 都是系统
+        自带的 / 已确认能正常打包的依赖，播放控制接口完全兼容。
+        """
         if self._backend_checked:
             return self._backend_ok
         self._backend_checked = True
@@ -340,12 +368,33 @@ class MusicPlayer:
                 pygame.mixer.init(frequency=44100, size=-16,
                                   channels=2, buffer=1024)
             self._pygame = pygame
+            self._backend_name = "pygame"
             self._backend_ok = True
             self._reason = ""
-        except Exception as exc:            # noqa: BLE001 — 没装 / 无音频设备
-            self._backend_ok = False
-            self._reason = str(exc) or type(exc).__name__
-        return self._backend_ok
+            return True
+        except Exception as exc:            # noqa: BLE001 — 没装 / dlopen 失败
+            pygame_error = str(exc) or type(exc).__name__
+        if self._use_system_backend():
+            return True
+        self._backend_ok = False
+        self._reason = pygame_error
+        return False
+
+    def _use_system_backend(self, detail: str = "") -> bool:
+        """切到 macOS 系统音频后端；不是 macOS 或切失败就返回 False。"""
+        if platform.system() != "Darwin":
+            return False
+        try:
+            from . import system_backend
+            self._pygame = system_backend.create()
+            self._backend_name = "system"
+            self._backend_ok = True
+            self._backend_checked = True
+            self._seekable = None
+            self._reason = detail
+            return True
+        except Exception:                   # noqa: BLE001
+            return False
 
     def _music(self):
         """拿到 pygame.mixer.music；后端不可用时返回 None。"""

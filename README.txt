@@ -56,8 +56,10 @@ ATR Game V0.4.10
 	内置音乐播放器（0.4.10 新增）：主菜单右上角「🎵 音乐」展开悬浮窗，
 		点播放即可边玩小游戏边听歌；悬浮窗可拖到任意位置、收起成细条，
 		展开后有播放 / 暂停、上一首 / 下一首、循环、音量与 23 首曲库；
-		进任何对局页都不会消失（挂在 page.overlay，不受换页影响）。
-		设置页「音乐」小节可开关悬浮窗、调音量；显隐与音量下次启动保留
+		进任何对局页都不会消失（挂在 page.overlay，不受换页影响）；
+		收起播放器后右上角会留一个 🎵 小按钮，在任何游戏里点它都能
+		重新展开，不必退回主菜单。设置页「音乐」小节可开关悬浮窗、
+		调音量；显隐与音量下次启动保留
 		说明：mp3 由 Python 侧 pygame.mixer 播放（flet 1.0 没有 ft.Audio），
 		桌面包已带依赖；手机端缺库时界面提示原因，游戏照常可用
 
@@ -126,10 +128,11 @@ ATR Game V0.4.10
 	等价手动命令：
 		./.venv/bin/python -c "import sys;sys.argv[0]='flet';from flet.cli import main;main()" \
 			build apk --yes
-	打包运行时（0.4.10 内置音乐后）：pyproject.toml 的 requires-python
-		锁在 >=3.10,<3.14，flet build 会选 Python 3.13 装进包里 ——
-		pygame 在 PyPI 上没有 cp314 的预编译 wheel，用 3.14 打包会在
-		CI 上退回源码编译并因缺 SDL.h 失败；源码运行仍支持 3.10+
+	打包运行时（0.4.10 内置音乐后）：仍按 flet 默认选 Python 3.14；
+		Windows / Linux 用 pygame-ce（有 cp314 预编译 wheel）；
+		macOS **不装** pygame —— 打包后其 SDL dylib 会 dlopen 失败，
+		改走系统 afconvert + sounddevice（system_backend.py），
+		装机版也能播放 / 暂停 / 调音量 / 拖进度；源码运行支持 3.10+
 	各平台还差什么（本机 2026-10-17 实测）：
 		apk / aab：flet 会自动装 Flutter + JDK17 + AndroidSDK，
 			但 GitHub 在国内不通，JDK 要先走镜像放好：

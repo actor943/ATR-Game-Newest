@@ -507,6 +507,7 @@ STRINGS: dict[str, str] = {
     "music.drag_hint": "拖动标题可移动悬浮窗，展开后可调音量与选歌",
     "music.playing_hint": "正在播放 · 进任何小游戏都能继续听",
     "music.seek_unsupported": "当前音频格式不支持拖动进度；音量与切歌照常可用",
+    "music.system_backend": "系统音频模式",
     "music.paused": "已暂停",
     "music.unavailable": "当前设备无法播放音乐：{reason}",
     "settings.section_music": "音乐",

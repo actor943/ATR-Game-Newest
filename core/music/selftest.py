@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import builtins
 import inspect
+import platform
 
 import flet as ft
 
@@ -107,12 +109,33 @@ def _case_player() -> None:
         settings_mod.Settings.save = original      # type: ignore[method-assign]
 
 
+def _case_system_backend() -> None:
+    """模拟打包后 pygame 加载失败，验证自动回退到系统音频后端。"""
+    if platform.system() != "Darwin":
+        return
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "pygame":
+            raise ImportError("模拟打包环境的 dlopen 失败")
+        return real_import(name, *args, **kwargs)
+
+    builtins.__import__ = fake_import
+    try:
+        p = MusicPlayer()
+        assert p.available, f"系统音频回退失败：{p.reason}"
+        assert p.backend_name == "system", p.backend_name
+    finally:
+        builtins.__import__ = real_import
+
+
 def _case_overlay() -> None:
     page = _FakePage()
     p = MusicPlayer()
     overlay = FloatingPlayer(page, p, visible=True)
     overlay.attach()
     assert page.overlay and overlay.root in page.overlay
+    assert overlay.handle in page.overlay
     assert len(page.tasks) == 1, "悬浮窗应启动一个心跳任务"
     assert overlay.compact.visible and not overlay.expanded_view.visible
 
@@ -127,15 +150,22 @@ def _case_overlay() -> None:
     assert len(overlay.track_list.controls) == len(p.tracks)
 
     overlay.hide()
-    assert not overlay.root.visible
+    assert not overlay.root.visible and overlay.handle.visible, \
+        "收起后必须留下全游戏可用的音乐小入口"
+    overlay._on_handle_click()
+    assert overlay.root.visible and not overlay.handle.visible \
+        and overlay.expanded, "点右上角音符应重新展开播放器"
+
     overlay.detach()
     assert overlay.root not in page.overlay
+    assert overlay.handle not in page.overlay
 
 
 def main() -> int:
     cases = [
         ("曲库扫描与时长", _case_library),
         ("播放状态机", _case_player),
+        ("系统音频回退", _case_system_backend),
         ("悬浮窗控件", _case_overlay),
     ]
     failed = 0

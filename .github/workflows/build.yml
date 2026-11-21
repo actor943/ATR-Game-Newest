@@ -43,8 +43,8 @@ jobs:
       #   所以版本号要与 pyproject.toml / requirements.txt 三处对齐，
       #   千万别只改 workflow 这一处。
       #   打包进 .app / .exe 的 Python 仍按 requires-python 默认取 3.14；
-      #   内置音乐用的是 pygame-ce（不是原版 pygame），它在 3.14 上有
-      #   预编译 wheel，不需要 CI 机器装 SDL2 头文件。
+      #   Windows 用 pygame-ce（有 cp314 wheel），macOS 不装 pygame，
+      #   走系统 afconvert + sounddevice，避免打包后 SDL dylib dlopen 失败。
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
