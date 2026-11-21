@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import flet as ft
 
+from core import music
 from core import ui_theme as ui
 from core.i18n import t
 from core.profile import Profile
@@ -38,9 +39,18 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
         """首页的一扇「门」：大图标 + 标题 + 说明。"""
         return ui.card(title, desc, icon, go(path))
 
+    def open_music(_e):
+        """打开 / 展开悬浮音乐窗（音量、切歌、曲库都在窗里）。"""
+        music.show(page, expanded=True)
+
     header = ft.Row(
         [
             ft.Container(expand=True),
+            ft.Container(
+                content=ui.text(t("menu.music"), 12, "secondary"),
+                padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+                border_radius=4, ink=True, on_click=open_music,
+            ),
             ft.Container(
                 content=ui.text(t("menu.settings"), 12, "secondary"),
                 padding=ft.Padding.symmetric(horizontal=8, vertical=4),

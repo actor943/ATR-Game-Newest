@@ -97,6 +97,12 @@ def refresh(page: ft.Page, navigate: Callable[[str], None]) -> None:
             router.invalidate(spec.path)
         router.invalidate(None)                 # 兜底：清整个缓存
     navigate(path or "/")
+    # 悬浮音乐窗挂在 overlay 上，不在路由缓存里，单独通知它重取配色
+    try:
+        from core import music
+        music.refresh(page)
+    except Exception:                       # noqa: BLE001
+        pass
 
 
 def ensure_loaded() -> None:

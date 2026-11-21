@@ -73,6 +73,12 @@ class Settings:
     # 界面语言（见 core/i18n）："zh_CN" 简体中文 / "en_US" English。
     # 未登记过的代号会被 i18n.normalize 回落到 zh_CN。
     language: str = "zh_CN"
+    # 内置音乐（见 core/music）：音量 / 悬浮窗是否显示 / 上次选中的曲目 /
+    # 单曲循环。悬浮窗隐藏时音乐照常播放，下次启动按这个开关恢复显示。
+    music_volume: float = 0.65
+    music_visible: bool = True
+    music_track: str = ""
+    music_loop: bool = False
     data: dict = field(default_factory=dict)
 
     @classmethod
@@ -84,6 +90,10 @@ class Settings:
             raw = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return cls()
+        try:
+            volume = max(0.0, min(1.0, float(raw.get("music_volume", 0.65))))
+        except (TypeError, ValueError):
+            volume = 0.65
         return cls(
             theme=raw.get("theme", "light"),
             show_shortcut_hint=raw.get("show_shortcut_hint", True),
@@ -91,6 +101,10 @@ class Settings:
             window_mode=raw.get("window_mode", "fullscreen"),
             ui_pack=raw.get("ui_pack", "default") or "default",
             language=raw.get("language", "zh_CN") or "zh_CN",
+            music_volume=volume,
+            music_visible=bool(raw.get("music_visible", True)),
+            music_track=raw.get("music_track", "") or "",
+            music_loop=bool(raw.get("music_loop", False)),
             data=raw.get("data", {}) or {},
         )
 

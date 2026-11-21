@@ -120,9 +120,11 @@ def _table_size(page: ft.Page) -> Tuple[float, float]:
                       - 2 * COL_GAP - WIDE_SAFE)
         avail_h = max(220.0, h - 56.0 - pad - 24.0)
     else:
-        avail_w = max(280.0, w - pad - 16.0)
-        # 控制区现在是三行（转盘/力度/击球点 + 读数/按钮 + 杆法快捷键）
-        avail_h = max(220.0, h - 56.0 - pad - 290.0)
+        # 窄屏自上而下：app 栏 + padding + 球桌 + 紧凑信息条 + 控制区。
+        # 控制区已换成小号控件（转盘 78 / 力度条 94 / 击球点 78），
+        # 390px 留白足够装下信息条 + 三行控制器 + 间隔，矮屏还能再压球桌。
+        avail_w = max(240.0, w - pad - 16.0)
+        avail_h = max(100.0, h - 56.0 - pad - 390.0)
         if avail_w >= 660.0 + 210.0:
             avail_w -= 210.0               # 留出右侧信息栏
     table_w = min(avail_w / RAIL_W,
@@ -174,11 +176,22 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
         self._force_n = power_to_force(0.4)     # 默认 40% 力度（80 / 200 牛）
         self._top = 0.0                         # 高低杆：-1 低杆 ~ +1 高杆
         self._side = 0.0                        # 加塞：-1 左塞 ~ +1 右塞
-        self.dial = AngleDial(size=110.0,
+        # 手机（窄屏）从一开始就造小号控制器，避免信息栏 + 控制区竖着
+        # 堆起来超过一屏。尺寸只在建页时选一次：手机永远窄、桌面永远宽，
+        # 用户拖窗口只换外层排版，不动物理与棋局。
+        self.compact = not _wide_layout(page)
+        # 矮屏（<=700）再用小一档，保证 320×568 也不越界；高屏给手指
+        # 留出更大的点击面积，反正下面还有富余空间。
+        self.tiny = self.compact and responsive.size(page)[1] < 700.0
+        dial_size = 72.0 if self.tiny else (88.0 if self.compact else 110.0)
+        power_size = ((30.0, 86.0) if self.tiny else
+                      ((36.0, 108.0) if self.compact else (40.0, 132.0)))
+        self.dial = AngleDial(size=dial_size,
                               on_change=self._on_dial_change)
-        self.powerbar = PowerBar(width=40.0, height=132.0, max_n=FORCE_MAX_N,
+        self.powerbar = PowerBar(width=power_size[0], height=power_size[1],
+                                 max_n=FORCE_MAX_N,
                                  on_change=self._on_power_change)
-        self.spin_dial = SpinDial(size=110.0,
+        self.spin_dial = SpinDial(size=dial_size,
                                   on_change=self._on_spin_change)
         self.force_text = ft.Text("", size=13, color=T.TEXT_PRIMARY,
                                   weight=ft.FontWeight.BOLD)
@@ -554,7 +567,7 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
         横向同排，绝不能因为宽度刚好卡住，就把右侧内容换到球桌下面。
         三列复用同一批控件，切换布局时不重建棋局 / 球 / 输入内容。
         """
-        table_panel, side, controls = self._panels
+        table_panel, side, side_compact, controls = self._panels
         if wide:
             return ft.Row(
                 [table_panel, ft.Container(width=COL_GAP), side,
@@ -563,16 +576,13 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
                 alignment=ft.MainAxisAlignment.CENTER,
                 vertical_alignment=ft.CrossAxisAlignment.START,
             )
-        body = ft.Row(
-            [table_panel, ft.Container(width=COL_GAP), side],
-            alignment=ft.MainAxisAlignment.CENTER,
-            vertical_alignment=ft.CrossAxisAlignment.START,
-            wrap=True,
-            run_spacing=10,
-        )
+        # 窄屏：信息栏换成两行的紧凑条（去掉力度条 / 模式标题 / 长提示），
+        # 力矩和出杆按钮本来就在下面的控制区，不必重复占一整列高度。
         return ft.Column(
-            [body, ft.Container(height=12), controls],
+            [table_panel, ft.Container(height=6), side_compact,
+             ft.Container(height=6), controls],
             spacing=0,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
     def _on_resize(self, _w, _h) -> None:
@@ -661,31 +671,57 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             wrap=True, run_spacing=6,
         )
+        # 矮屏按钮保持 54px 宽（5 个刚好塞进 320px），高屏可以放大一点
+        pw, ph = ((58, 32) if (self.compact and not self.tiny) else (54, 28))
         presets = ft.Row(
             [
                 tap_button(t("billiards.tip_center"),
                            lambda _e, a=0.0, s=0.0: self._preset_spin(a, s),
-                           width=54, height=28, size=10),
+                           width=pw, height=ph, size=10),
                 tap_button(t("billiards.tip_follow"),
                            lambda _e, a=0.85, s=0.0: self._preset_spin(a, s),
-                           width=54, height=28, size=10),
+                           width=pw, height=ph, size=10),
                 tap_button(t("billiards.tip_draw"),
                            lambda _e, a=-0.85, s=0.0: self._preset_spin(a, s),
-                           width=54, height=28, size=10),
+                           width=pw, height=ph, size=10),
                 tap_button(t("billiards.tip_left"),
                            lambda _e, a=0.0, s=-0.85: self._preset_spin(a, s),
-                           width=54, height=28, size=10),
+                           width=pw, height=ph, size=10),
                 tap_button(t("billiards.tip_right"),
                            lambda _e, a=0.0, s=0.85: self._preset_spin(a, s),
-                           width=54, height=28, size=10),
+                           width=pw, height=ph, size=10),
             ],
             alignment=ft.MainAxisAlignment.CENTER,
             spacing=4, wrap=True, run_spacing=4,
         )
         controls_panel = ft.Column(
             [top_row, mid_row, presets, self.control_hint],
-            spacing=8,
+            spacing=4 if self.compact else 8,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+        # 窄屏信息条：只留「轮到谁 + 重开」「两人剩球」「状态」三行。
+        # 原来的模式标题 / 力度条 / 长提示 / 大按钮在手机上纯占高度，
+        # 力度已经在控制区有输入框和按钮，重开改成小按钮即可。
+        restart_small = ft.Button(
+            content=ft.Text(t("billiards.restart"), size=11),
+            width=74, height=30, on_click=self._reset,
+        )
+        side_compact = ft.Column(
+            [
+                ft.Row(
+                    [self.turn_text, restart_small],
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Row(
+                    [ft.Column([self.p1_text], spacing=0, expand=1),
+                     ft.Column([self.p2_text], spacing=0, expand=1)],
+                    spacing=8,
+                ),
+                self.status_text,
+            ],
+            spacing=1,
         )
 
         side = ft.Column(
@@ -711,7 +747,7 @@ class _PlayPage(PlayNetMixin, PlayGestureMixin):
             width=SIDE_W,
         )
 
-        self._panels = (table_panel, side, controls_panel)
+        self._panels = (table_panel, side, side_compact, controls_panel)
         self._wide_mode = _wide_layout(self.page)
         padded = page_padding(self._compose(self._wide_mode))
         self._layout_host = padded

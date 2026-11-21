@@ -21,9 +21,11 @@ from __future__ import annotations
 import flet as ft
 
 from core import i18n
+from core import music
 from core import responsive
 from core import theme
 from core import ui_theme as ui
+from core.music import player as music_player
 from core.i18n import t
 from core.registry import NavigateFn
 from core.router import Router
@@ -300,6 +302,49 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
     _render_pack_row()
 
+    # ---------------- 音乐 ----------------
+
+    def toggle_music_visible(e):
+        """显示 / 隐藏悬浮播放器（隐藏后音乐继续播放）。"""
+        s = state["settings"]
+        s.music_visible = bool(e.control.value)
+        s.save()
+        music_visible_text.value = (
+            t("common.on") if s.music_visible else t("common.off"))
+        music.set_visible(page, s.music_visible)
+        page.update()
+
+    def change_music_volume(e):
+        """拖动音量条：即时改变播放音量。"""
+        try:
+            value = float(e.control.value) / 100.0
+        except (TypeError, ValueError):
+            return
+        music_player.set_volume(value)
+        music_volume_text.value = f"{int(round(value * 100))}%"
+        page.update()
+
+    def commit_music_volume(_e=None):
+        """松手后才写盘，避免拖动过程中反复读写 settings.json。"""
+        state["settings"].music_volume = music_player.volume
+        state["settings"].save()
+        music_player.persist()
+
+    music_visible_text = ft.Text(
+        t("common.on") if state["settings"].music_visible else t("common.off"),
+        size=13, color=T.TEXT_PRIMARY,
+    )
+    music_volume_text = ft.Text(
+        f"{int(round(music_player.volume * 100))}%",
+        size=13, color=T.TEXT_PRIMARY,
+    )
+    music_volume_slider = ft.Slider(
+        min=0, max=100, divisions=20, width=180,
+        value=int(round(music_player.volume * 100)),
+        on_change=change_music_volume,
+        on_change_end=commit_music_volume,
+    )
+
     body = ft.Column(
         [
             _section_title(t("settings.section_language")),
@@ -332,6 +377,44 @@ def build(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                         ft.Container(height=4),
                         ft.Text(t("settings.pack_note"),
                                 size=11, color=T.TEXT_MUTED),
+                    ],
+                    spacing=0,
+                ),
+            ),
+            _section_title(t("settings.section_music")),
+            ft.Container(
+                border=ft.Border.all(1, T.BORDER),
+                border_radius=8,
+                content=ft.Column(
+                    [
+                        row(t("settings.music_visible"), music_visible_text,
+                            toggle_music_visible,
+                            initial_value=state["settings"].music_visible),
+                        ft.Container(
+                            padding=ft.Padding.symmetric(
+                                horizontal=12, vertical=10),
+                            content=ft.Row(
+                                [
+                                    ft.Container(
+                                        content=ft.Text(
+                                            t("settings.music_volume"),
+                                            size=14, color=T.TEXT_PRIMARY),
+                                        expand=True,
+                                    ),
+                                    music_volume_slider,
+                                    ft.Container(width=10),
+                                    music_volume_text,
+                                ],
+                                vertical_alignment=(
+                                    ft.CrossAxisAlignment.CENTER),
+                            ),
+                        ),
+                        ft.Container(
+                            padding=ft.Padding.symmetric(
+                                horizontal=12, vertical=8),
+                            content=ft.Text(t("settings.music_note"),
+                                            size=11, color=T.TEXT_MUTED),
+                        ),
                     ],
                     spacing=0,
                 ),

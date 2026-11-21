@@ -58,7 +58,7 @@ STRINGS: dict[str, str] = {
     "menu.multiplayer_desc": "同一 WiFi 下开房间一起玩，带语音",
     "menu.history": "游玩记录",
     "menu.history_desc": "所有游戏玩过的历史记录都在这儿",
-    "menu.footer": "v0.4.9 · 支持局域网联机",
+    "menu.footer": "v0.4.10 · 支持局域网联机",
 
     # ---------------- 单人游戏 ----------------
     "single.title": "单人游戏",
@@ -487,8 +487,35 @@ STRINGS: dict[str, str] = {
     "dino.touch_hint": "点击跳、下滑蹲；下方按键可连发（蹲键按住）",
     "dino.best_suffix": "最高 {best}",
     "dino.speed_suffix": "速度 {speed}",
-        
-    
+
+    # ---------------- 内置音乐播放器 ----------------
+    "menu.music": "🎵 音乐",
+    "music.title": "音乐播放器",
+    "music.no_track": "没有找到歌曲",
+    "music.empty_hint": "把 mp3 放进 assets/songs 就能在这里听歌",
+    "music.track_of": "共 {count} 首 · {filename}",
+    "music.library": "曲库 · {count} 首",
+    "music.play": "播放",
+    "music.pause": "暂停",
+    "music.prev": "上一首",
+    "music.next": "下一首",
+    "music.loop": "单曲循环",
+    "music.expand": "展开曲库",
+    "music.collapse": "收起",
+    "music.hide": "隐藏悬浮窗",
+    "music.volume": "音量",
+    "music.drag_hint": "拖动标题可移动悬浮窗，展开后可调音量与选歌",
+    "music.playing_hint": "正在播放 · 进任何小游戏都能继续听",
+    "music.seek_unsupported": "当前音频格式不支持拖动进度；音量与切歌照常可用",
+    "music.paused": "已暂停",
+    "music.unavailable": "当前设备无法播放音乐：{reason}",
+    "settings.section_music": "音乐",
+    "settings.music_visible": "显示悬浮播放器",
+    "settings.music_volume": "音量",
+    "settings.music_note": "悬浮窗可拖动、可收起；隐藏时音乐不会停止",
+
+
 }
+
 
 

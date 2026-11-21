@@ -173,6 +173,13 @@ def refresh(page=None, navigate: Optional[Callable[[str], None]] = None) -> None
         router.invalidate(None)                 # 兜底：清整个缓存
     if navigate is not None:
         navigate(path or "/")
+    # 悬浮音乐窗不在路由缓存里，单独通知它重取文案（不重建、不打断播放）
+    try:
+        if page is not None:
+            from core import music
+            music.refresh(page)
+    except Exception:                       # noqa: BLE001
+        pass
 
 
 # ------------------------------------------------------------------
