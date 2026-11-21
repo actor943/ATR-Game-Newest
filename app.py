@@ -12,6 +12,7 @@ import flet as ft
 import games  # noqa: F401
 
 from core import i18n
+from core import music
 from core import registry
 from core import responsive
 from core import theme
@@ -107,4 +108,8 @@ def run(page: ft.Page) -> None:
             router.reflow(responsive.is_static_route)
 
     responsive.install(page, _on_viewport_change)
+
+    # 悬浮播放器挂在 page.overlay 上：换页 / 进对局都不会被 Router 清掉，
+    # 用户可以在玩小游戏的同时继续听歌。
+    music.install(page)
     router.navigate("/")

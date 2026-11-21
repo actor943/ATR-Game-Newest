@@ -27,13 +27,17 @@ dependencies = [
 # ---------------------------------------------------------------
 
 [tool.flet.macos]
-dependencies = ["numpy>=1.26", "sounddevice>=0.4.6"]
+dependencies = ["numpy>=1.26", "sounddevice>=0.4.6", "pygame>=2.5"]
 
 [tool.flet.windows]
-dependencies = ["numpy>=1.26", "sounddevice>=0.4.6"]
+dependencies = ["numpy>=1.26", "sounddevice>=0.4.6", "pygame>=2.5"]
 
 [tool.flet.linux]
-dependencies = ["numpy>=1.26", "sounddevice>=0.4.6"]
+dependencies = ["numpy>=1.26", "sounddevice>=0.4.6", "pygame>=2.5"]
+
+# 内置音乐播放器（core/music）：flet 1.0 没有 Audio 控件，mp3 由 Python 侧
+# pygame.mixer 播放，Flet 侧只画悬浮窗。pygame 只在桌面包里装：Android/iOS
+# 没有对应 wheel，手机端会自动降级（界面提示原因，游戏照常可用）。
 
 # macOS 麦克风权限：没有这条键，系统会**直接拒绝**录音（连授权弹窗都不弹），
 # 分发版里语音等于废掉 —— 库装齐了也不够，权限说明必须一起给。

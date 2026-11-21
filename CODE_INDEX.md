@@ -108,6 +108,19 @@
 | `core/profile.py` | 173 | 本地资料：昵称、设备号、房间码记忆、上次房间名。 |
 | `core/views/history_view.py` | 82 | 主页「游玩记录」页：汇总所有游戏 + 顶部按游戏筛选（0.4.9 新增）。 |
 
+### G2. 内置音乐播放器（5 个，0.4.10 新增）
+
+| 文件 | 作用 |
+| --- | --- |
+| `core/music/__init__.py` | 对外入口：`player`（进程内单例）、`install(page)` 装悬浮窗、`show/set_visible/refresh`。 |
+| `core/music/library.py` | 定位 `assets/songs/`（开发态 / 打包态多路径试探）、扫描 23 首 mp3、清理歌名、估算时长（跳过动辄数 MB 的 ID3 封面）。 |
+| `core/music/player.py` | 播放器状态机：`play/pause/resume/toggle/stop/next/previous/select/seek/set_volume/set_loop/tick`，pygame.mixer 懒加载 + 失败降级，状态变化广播给 UI；音量 / 曲目 / 循环写回 settings。 |
+| `core/music/floating.py` | 悬浮窗控件：挂在 `page.overlay` 上跨页常驻，标题拖动、收起 / 展开、进度 / 音量、曲库点歌；每次刷新重取主题色与 i18n 文案。 |
+| `core/music/selftest.py` | `python -m core.music.selftest`：曲库扫描、时长、播放状态机、悬浮窗构建，不播放真实音频也不写用户设置。 |
+
+> 为什么不用 `ft.Audio`：flet 1.0.4 已移除该控件。音频走 Python 侧 pygame，
+> Flet 只画界面；`pygame` 只在桌面平台依赖表里声明，移动端优雅降级。
+
 ### H. 掼蛋 · 纯逻辑（不依赖 flet，可命令行直接跑）（15 个）
 
 | 文件 | 行数 | 作用 |
@@ -219,7 +232,7 @@
 | `games/billiards/views_gesture.py` | 128 | 手势 mixin：按住白球往后拉（拉弓）瞄准、犯规后拖动摆白球；**拉弓出杆同样带上当前杆法并在出杆后回中杆**。 |
 | `games/billiards/views_net.py` | 238 | 联机 mixin：身份、击球请求、摆球请求、房主广播整局快照；**`shot` / `req_shoot` 增加 `top` / `side`，`_tip_of()` 用 `clamp_tip` 挡脏数据，老客户端缺字段自动当中杆**。 |
 | `games/billiards/views_controls.py` | 271 | 角度转盘 + 力度条（0~200 牛）+ **`SpinDial` 击球点圆盘**（拖红点选高低杆 / 加塞，单位圆盘夹紧）；`set_force()` / `set_spin()` 供数值框与快捷按钮反向同步。 |
-| `games/billiards/views_play.py` | 768 | 对局页：宽屏三列横向同排 / 窄屏上下两行、resize 原地换布局；`_table_size` 先除掉木质库边倍率（RAIL_W/RAIL_H）再算台面，库边不会被裁；控制区拆成三行短 Row（转盘·力度·击球点 / 读数·击球 / 杆法快捷键）；**杆法状态、读数、预设、出杆后归中、历史记录里的杆法**；60FPS 主循环、落盘。 |
+| `games/billiards/views_play.py` | 804 | 对局页：宽屏三列横向同排 / **窄屏紧凑一屏排版**；`_table_size` 先除掉木质库边倍率再算台面，窄屏预留 390px 给信息条 + 控制区并允许矮屏继续缩桌；**窄屏用 `side_compact` 两行信息条**（回合 + 小重开键 / 两人剩球 / 状态），控制器按屏高选 72/88/110 三档（矮屏更小、高屏更大）；控制区三行短 Row（转盘·力度·击球点 / 读数·击球 / 杆法快捷键）；resize 原地换布局；**杆法状态、读数、预设、出杆后归中、历史记录里的杆法**；60FPS 主循环、落盘。 |
 | `games/billiards/views.py` | 72 | 子菜单：开始对局 / 历史记录 / 规则说明 / **击球点（杆法说明）**。 |
 | `games/billiards/history_view.py` | 63 | 台球历史记录页入口（复用 `core/history_view.py`）。 |
 | `games/billiards/selftest.py` | 472 | 自检 **21 组**：原有摆球 / 碰撞 / 摩擦 / 撞库 / 进袋 / 穿透 / 规则 / 快照，新增 **击球点夹紧、高杆跟进、低杆回缩、加塞让点、吃库对称偏转、摩擦差异、旋量衰减、引擎记录击球点**。 |
