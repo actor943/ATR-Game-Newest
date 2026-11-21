@@ -1,0 +1,153 @@
+import asyncio
+import inspect
+from collections.abc import Awaitable, Coroutine, Sequence
+from contextlib import asynccontextmanager, suppress
+from typing import Any, Callable, Optional, Union
+
+import fastapi
+from fastapi.datastructures import Default
+from fastapi.params import Depends
+from fastapi.utils import generate_unique_id
+from starlette.middleware import Middleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import BaseRoute
+
+import flet_web.fastapi
+
+
+class FastAPI(fastapi.FastAPI):
+    """
+    FastAPI wrapper that integrates Flet app-manager startup/shutdown lifecycle.
+
+    It mirrors `fastapi.FastAPI` constructor options while
+    wiring a custom lifespan context that starts and stops
+    `flet_web.fastapi.app_manager`.
+    """
+
+    def __init__(
+        self,
+        *,
+        debug: bool = False,
+        routes: Optional[list[BaseRoute]] = None,
+        title: str = "FastAPI",
+        summary: Optional[str] = None,
+        description: str = "",
+        version: str = "0.1.0",
+        openapi_url: Optional[str] = "/openapi.json",
+        openapi_tags: Optional[list[dict[str, Any]]] = None,
+        servers: Optional[list[dict[str, Union[str, Any]]]] = None,
+        dependencies: Optional[Sequence[Depends]] = None,
+        default_response_class: type[Response] = Default(JSONResponse),
+        redirect_slashes: bool = True,
+        docs_url: Optional[str] = "/docs",
+        redoc_url: Optional[str] = "/redoc",
+        swagger_ui_oauth2_redirect_url: Optional[str] = "/docs/oauth2-redirect",
+        swagger_ui_init_oauth: Optional[dict[str, Any]] = None,
+        middleware: Optional[Sequence[Middleware]] = None,
+        exception_handlers: Optional[
+            dict[
+                Union[int, type[Exception]],
+                Callable[[Request, Any], Coroutine[Any, Any, Response]],
+            ]
+        ] = None,
+        on_startup: Optional[Sequence[Callable[[], Optional[Awaitable]]]] = None,
+        on_shutdown: Optional[Sequence[Callable[[], Optional[Awaitable]]]] = None,
+        terms_of_service: Optional[str] = None,
+        contact: Optional[dict[str, Union[str, Any]]] = None,
+        license_info: Optional[dict[str, Union[str, Any]]] = None,
+        openapi_prefix: str = "",
+        root_path: str = "",
+        root_path_in_servers: bool = True,
+        responses: Optional[dict[Union[int, str], dict[str, Any]]] = None,
+        callbacks: Optional[list[BaseRoute]] = None,
+        webhooks: Optional[fastapi.routing.APIRouter] = None,
+        deprecated: Optional[bool] = None,
+        include_in_schema: bool = True,
+        swagger_ui_parameters: Optional[dict[str, Any]] = None,
+        generate_unique_id_function: Callable[
+            [fastapi.routing.APIRoute], str
+        ] = Default(generate_unique_id),
+        **extra: Any,
+    ) -> None:
+        """
+        Initialize a FastAPI app with Flet-aware lifespan handling.
+
+        All standard FastAPI constructor parameters are supported and passed
+        through unchanged.
+
+        Args:
+            debug: Enables debug mode.
+            on_startup: Optional startup callbacks executed after Flet app-manager
+                startup.
+            on_shutdown: Optional shutdown callbacks executed before Flet
+                app-manager shutdown.
+            generate_unique_id_function: Function used to generate OpenAPI
+                operation IDs.
+            **extra: Additional keyword arguments forwarded to `fastapi.FastAPI`.
+        """
+
+        @asynccontextmanager
+        async def lifespan(app: fastapi.FastAPI):
+            """
+            Manage Flet and user-provided startup/shutdown hooks for app lifespan.
+
+            Args:
+                app: FastAPI application instance whose lifespan is being managed.
+            """
+
+            await flet_web.fastapi.app_manager.start()
+            if on_startup:
+                for h in on_startup:
+                    if inspect.iscoroutinefunction(h):
+                        await h()
+                    else:
+                        h()
+
+            with suppress(asyncio.CancelledError):
+                yield
+            if on_shutdown:
+                for h in on_shutdown:
+                    if inspect.iscoroutinefunction(h):
+                        await h()
+                    else:
+                        h()
+            await flet_web.fastapi.app_manager.shutdown()
+
+        super().__init__(
+            debug=debug,
+            routes=routes,
+            title=title,
+            summary=summary,
+            description=description,
+            version=version,
+            openapi_url=openapi_url,
+            openapi_tags=openapi_tags,
+            servers=servers,
+            dependencies=dependencies,
+            default_response_class=default_response_class,
+            redirect_slashes=redirect_slashes,
+            docs_url=docs_url,
+            redoc_url=redoc_url,
+            swagger_ui_oauth2_redirect_url=swagger_ui_oauth2_redirect_url,
+            swagger_ui_init_oauth=swagger_ui_init_oauth,
+            middleware=middleware,
+            exception_handlers=exception_handlers,
+            # on_startup=on_startup,
+            # on_shutdown=on_shutdown,
+            lifespan=lifespan,
+            terms_of_service=terms_of_service,
+            contact=contact,
+            license_info=license_info,
+            openapi_prefix=openapi_prefix,
+            root_path=root_path,
+            root_path_in_servers=root_path_in_servers,
+            responses=responses,
+            callbacks=callbacks,
+            webhooks=webhooks,
+            deprecated=deprecated,
+            include_in_schema=include_in_schema,
+            swagger_ui_parameters=swagger_ui_parameters,
+            generate_unique_id_function=generate_unique_id_function,
+            **extra,
+        )
