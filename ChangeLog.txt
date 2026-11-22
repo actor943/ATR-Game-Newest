@@ -1,5 +1,12 @@
 Version: 0.4.10
 
+0.4.10-修正（打包版启动崩溃：'FletAudioMusic' has no attribute 'mixer'）:
+原因：player._music() 统一走 ``self._pygame.mixer.music``，但挂 flet-audio
+	时把 FletAudioMusic 直接赋给了 _pygame，少了 pygame 的 mixer 层级；
+	源码自检没覆盖这条访问路径，装机版启动时必然 AttributeError
+修正：FletAudioMusic 增加 .mixer 兼容属性（返回 .music 指向自身的代理），
+	自检加断言 ``_pygame.mixer.music is _pygame`` 且 ``_music()`` 返回同一对象
+
 0.4.10-修正（手机端音乐「No module named 'pygame'」）:
 原因：pygame / pygame-ce 都没有 Android / iOS wheel，之前只在桌面包里装，
 	手机运行时 import pygame 直接失败

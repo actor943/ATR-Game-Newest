@@ -24,6 +24,13 @@ def _duration(ms: float) -> ft.Duration:
     return ft.Duration(milliseconds=max(0, int(ms)))
 
 
+class _MixerProxy:
+    """给 player 的 ``self._pygame.mixer.music`` 路径补一层。"""
+
+    def __init__(self, music: "FletAudioMusic") -> None:
+        self.music = music
+
+
 class FletAudioMusic:
     """``pygame.mixer.music`` 风格的 flet-audio 替身。"""
 
@@ -39,6 +46,11 @@ class FletAudioMusic:
     def audio(self):
         """Page.services 里挂着的就是它，必须保持强引用。"""
         return self._audio
+
+    @property
+    def mixer(self) -> _MixerProxy:
+        """兼容 ``player._pygame.mixer.music`` 的访问路径。"""
+        return _MixerProxy(self)
 
     def _dispatch(self, method, *args) -> None:
         """把协程方法交给 Flet 的事件循环执行，不阻塞 UI 线程。"""

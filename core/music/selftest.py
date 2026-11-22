@@ -119,6 +119,8 @@ def _case_flet_backend() -> None:
     assert len(page.services) == 1, "Audio 服务必须挂进 page.services"
     audio = page.services[0]
     shim = p._pygame
+    assert shim.mixer.music is shim, "缺 mixer 层级会让 _music() 直接崩溃"
+    assert p._music() is shim, "player._music() 必须拿到同一个后端对象"
     shim.load("On My Way.mp3")
     assert audio.src == "songs/On My Way.mp3", audio.src
     shim.set_volume(0.3)
