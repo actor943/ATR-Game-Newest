@@ -1,5 +1,19 @@
 Version: 0.4.10
 
+0.4.10-修正（手机端音乐「No module named 'pygame'」）:
+原因：pygame / pygame-ce 都没有 Android / iOS wheel，之前只在桌面包里装，
+	手机运行时 import pygame 直接失败
+修正：改用 Flet 官方扩展 ``flet-audio==1.0.4``（底层 Flutter audioplayers，
+	Windows / macOS / Linux / iOS / Android / Web 全平台支持）作为首选后端：
+	新增 core/music/flet_backend.py，把 fta.Audio 伪装成 pygame.mixer.music，
+	用 page.services 挂载 + page.run_task 调协程，位置 / 时长 / 播放状态由
+	事件回调实时写回；src 用相对 assets 的 "songs/xxx.mp3"，各平台通用
+	pyproject.toml / requirements.txt 把 flet-audio 列为全平台依赖；flet
+	build 会自动把包内 Flutter 插件注册进 apk / ipa / app / exe，无需手写
+	pubspec 或 --include-packages
+	桌面仍保留 pygame / macOS 系统音频作兜底（扩展没装上时不连累游戏）
+自检：新增「flet-audio 首选后端」用例，全部 5/5 通过；i18n 审计通过
+
 0.4.10-修正（装机版 mac app 音乐报 dlopen 失败）:
 现象：源码运行能放，打包后的 ATR Game.app 里播放器提示
 	「当前设备无法播放音乐：dlopen(...serious_python_darwin.bundle...)」；

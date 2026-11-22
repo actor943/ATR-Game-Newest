@@ -36,6 +36,9 @@ def install(page: ft.Page) -> FloatingPlayer:
         visible = bool(Settings.load().music_visible)
     except Exception:                       # noqa: BLE001 — 设置坏了也照常显示
         visible = True
+    # 先挂官方 flet-audio 服务（手机端唯一可行的播放器），再建悬浮窗；
+    # 这样悬浮窗第一次刷新时读到的就是最终后端状态。
+    player.attach_page(page)
     instance = FloatingPlayer(page, player, visible=visible)
     try:
         setattr(page, _ACTIVE_ATTR, instance)

@@ -39,6 +39,8 @@ class MusicPlayer:
         self._backend_checked = False
         self._backend_ok = False
         self._backend_name = ""
+        self._page_attached = False
+        self._attached_page = None
         self._seekable: Optional[bool] = None
         self._pygame = None
         self._started_at = 0.0
@@ -133,6 +135,33 @@ class MusicPlayer:
     def seekable(self) -> bool:
         """解码器是否支持拖动进度（首次尝试后确定，未知时按支持处理）。"""
         return self._seekable is not False
+
+    def attach_page(self, page) -> None:
+        """优先挂上官方 flet-audio 服务（全平台，含 Android / iOS）。
+
+        必须在 Flet 页面可用后调用（:func:`core.music.install` 会做）。
+        失败也不致命：桌面端继续走 pygame / 系统音频兜底，手机端会在界面
+        上显示原因。
+        """
+        if self._page_attached and self._attached_page is page:
+            return
+        self._page_attached = True
+        self._attached_page = page
+        try:
+            from .flet_backend import create
+            shim = create(page, self)
+            services = page.services
+            if shim.audio not in services:
+                services.append(shim.audio)
+            self._pygame = shim
+            self._backend_name = "flet"
+            self._backend_ok = True
+            self._backend_checked = True
+            self._seekable = None
+            self._reason = ""
+            self.notify()
+        except Exception as exc:            # noqa: BLE001 — 没装 flet-audio
+            print(f"[music] flet-audio 不可用，改用本地后端：{exc!r}")
 
     # ---------- 状态订阅 ----------
 

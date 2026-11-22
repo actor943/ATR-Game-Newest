@@ -42,9 +42,9 @@ jobs:
       #   这里只决定构建用的 Flutter 客户端。
       #   所以版本号要与 pyproject.toml / requirements.txt 三处对齐，
       #   千万别只改 workflow 这一处。
-      #   打包进 .app / .exe 的 Python 仍按 requires-python 默认取 3.14；
-      #   Windows 用 pygame-ce（有 cp314 wheel），macOS 不装 pygame，
-      #   走系统 afconvert + sounddevice，避免打包后 SDL dylib dlopen 失败。
+      #   打包进 .app / .apk / .ipa 的 Python 仍按 requires-python 取 3.14；
+      #   音乐统一走 pyproject 里的 flet-audio 扩展（Flutter audioplayers，
+      #   全平台通用），flet build 会自动注册它自带的 Flutter 插件。
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip

@@ -6,7 +6,7 @@
 # 其中 numpy / sounddevice 只服务房间语音（core/net/voice.py），缺了不影响启动。
 # 安装：pip install -r requirements.txt
 # 环境：Python ≥ 3.10（本机 venv 实测 3.14.3），源码 / 打包都按 flet 默认
-#       选到的运行时即可 —— 音频依赖改成 pygame-ce，3.14 也有预编译 wheel。
+#       选到的运行时即可 —— 音乐用官方 flet-audio 扩展，全平台统一。
 #
 # ⚠ 版本必须是 flet 1.0.x：代码里用的是 1.0 的 API
 #   （Dropdown.on_select、page.show_dialog / pop_dialog、page.window、ft.Button、ft.Icons…），
@@ -28,6 +28,9 @@
 #   flet 自己只在 extras 里钉这几个子包，裸装 flet 不会带上它们，
 #   结果就是本地跑不了桌面版、CI 也没有 flet build 可用。
 flet[all]==1.0.4
+# 内置音乐：官方 flet-audio 扩展，版本必须与 flet 一致；包内 Flutter 插件
+# 会被 flet build 自动注册到 apk / ipa / app / exe（手机端也能播放）。
+flet-audio==1.0.4
 
 # ---------------------------------------------------------------------
 # 【可选】房间语音聊天。缺了不影响启动，只是房间页提示「未安装」，
@@ -40,15 +43,6 @@ numpy>=1.26
 sounddevice>=0.4.6
 
 # ---------------------------------------------------------------------
-# 内置音乐播放器（core/music）：flet 1.0 没有 ft.Audio，mp3 由 pygame.mixer
-# 在 Python 侧播放；悬浮窗只是 Flet 界面。必须用 pygame-ce 而不是 pygame：
-# 原版没有 cp314 wheel，flet build 默认打 Python 3.14 时会在 CI 上源码编译
-# 并因缺 SDL.h 失败；pygame-ce 导入名仍是 pygame、API 兼容，四个桌面平台
-# 都有 cp314 wheel。同样要同步写进 pyproject.toml 的
-# [tool.flet.macos/.windows/.linux].dependencies（手机端不装）。
-# ---------------------------------------------------------------------
-pygame-ce>=2.5
-
 # ---------------------------------------------------------------------
 # 以下只在「打包分发」或「重新生成图标」时才需要，日常跑游戏不用装。
 # ---------------------------------------------------------------------

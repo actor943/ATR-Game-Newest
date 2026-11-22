@@ -129,10 +129,9 @@ ATR Game V0.4.10
 		./.venv/bin/python -c "import sys;sys.argv[0]='flet';from flet.cli import main;main()" \
 			build apk --yes
 	打包运行时（0.4.10 内置音乐后）：仍按 flet 默认选 Python 3.14；
-		Windows / Linux 用 pygame-ce（有 cp314 预编译 wheel）；
-		macOS **不装** pygame —— 打包后其 SDL dylib 会 dlopen 失败，
-		改走系统 afconvert + sounddevice（system_backend.py），
-		装机版也能播放 / 暂停 / 调音量 / 拖进度；源码运行支持 3.10+
+		音乐全平台统一用官方 flet-audio 扩展（Flutter audioplayers），
+		Windows / macOS / Android / iOS 都能播放 / 暂停 / 调音量 /
+		拖进度；桌面另保留 pygame / 系统音频作兜底。源码运行支持 3.10+
 	各平台还差什么（本机 2026-10-17 实测）：
 		apk / aab：flet 会自动装 Flutter + JDK17 + AndroidSDK，
 			但 GitHub 在国内不通，JDK 要先走镜像放好：

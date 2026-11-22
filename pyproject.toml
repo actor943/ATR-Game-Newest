@@ -10,6 +10,10 @@ dependencies = [
     #   用的 API 版本一致：代码用的是 1.0 的 API（page.window / show_dialog /
     #   Dropdown.on_select / ft.Button / ft.Icons）。改版本时这里要一起改。
     "flet==1.0.4",
+    # 内置音乐的跨平台后端：官方 flet-audio 扩展（底层 Flutter audioplayers）。
+    # 版本必须与 flet 对齐；包内自带 flutter/flet_audio 扩展，flet build 会
+    # 自动注册到各平台（含 Android / iOS），手机端不用再装 pygame（没有 wheel）。
+    "flet-audio==1.0.4",
     # ⚠ 房间语音的 numpy / sounddevice **不要**放这里：这是「所有平台」的公共
     #   依赖，放进来 Android / iOS / Web 包也会去装 sounddevice —— 它没有
     #   对应平台的 wheel，构建直接失败；手机端也用不到 PortAudio。
@@ -27,22 +31,18 @@ dependencies = [
 # ---------------------------------------------------------------
 
 [tool.flet.macos]
-# macOS 不装 pygame-ce：它自带的 libSDL2*.dylib 被 serious_python 搬进 app
-# bundle 后会 dlopen 失败（装机版播放器报「当前设备无法播放音乐」）。
-# core/music/system_backend.py 改用系统 afconvert + sounddevice，实测可用，
-# 还省掉 ~16MB 的 SDL 动态库。Windows / Linux 继续用 pygame-ce。
+# 只放房间语音库；音乐走全平台 flet-audio，不再打包任何 SDL 动态库。
 dependencies = ["numpy>=1.26", "sounddevice>=0.4.6"]
 
 [tool.flet.windows]
-dependencies = ["numpy>=1.26", "sounddevice>=0.4.6", "pygame-ce>=2.5"]
+dependencies = ["numpy>=1.26", "sounddevice>=0.4.6"]
 
 [tool.flet.linux]
-dependencies = ["numpy>=1.26", "sounddevice>=0.4.6", "pygame-ce>=2.5"]
+dependencies = ["numpy>=1.26", "sounddevice>=0.4.6"]
 
-# 内置音乐播放器（core/music）：flet 1.0 没有 Audio 控件，mp3 在 Python 侧
-# 播放，Flet 侧只画悬浮窗。Windows / Linux 用 pygame-ce（pygame 的社区维护
-# fork，导入名仍是 pygame、API 兼容，且有 cp314 预编译 wheel，不需要系统
-# SDL2）；macOS 走 core/music/system_backend.py 的系统音频方案。手机端优雅降级。
+# 内置音乐播放器（core/music）：统一用 [project].dependencies 里的 flet-audio
+# 扩展，全平台同一套播放代码；core/music/player.py 仍保留 pygame / macOS
+# 系统音频作桌面兜底（扩展没装上时不会连游戏一起崩）。
 
 # macOS 麦克风权限：没有这条键，系统会**直接拒绝**录音（连授权弹窗都不弹），
 # 分发版里语音等于废掉 —— 库装齐了也不够，权限说明必须一起给。

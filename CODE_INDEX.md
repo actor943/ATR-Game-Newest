@@ -116,7 +116,8 @@
 | `core/music/library.py` | 定位 `assets/songs/`（开发态 / 打包态多路径试探）、扫描 23 首 mp3、清理歌名、估算时长（跳过动辄数 MB 的 ID3 封面）。 |
 | `core/music/player.py` | 播放器状态机：`play/pause/resume/toggle/stop/next/previous/select/seek/set_volume/set_loop/tick`，pygame.mixer 懒加载 + 失败降级，状态变化广播给 UI；音量 / 曲目 / 循环写回 settings。 |
 | `core/music/floating.py` | 悬浮窗控件：挂在 `page.overlay` 上跨页常驻，标题拖动、收起 / 展开、进度 / 音量、曲库点歌；收起后右上角保留 🎵 小按钮，在任何游戏页都能点开；每次刷新重取主题色与 i18n 文案。 |
-| `core/music/system_backend.py` | macOS 系统音频兜底：`afconvert` 转临时 WAV + `sounddevice` 写 PCM + `numpy` 调音量，伪装成 `pygame.mixer.music`；打包版避开 SDL dylib dlopen 失败，支持真正的暂停 / 跳转。 |
+| `core/music/flet_backend.py` | 全平台首选后端：官方 `flet-audio` 扩展（Flutter audioplayers）伪装成 `pygame.mixer.music`；`page.services` 挂 Audio service，`page.run_task` 调协程，位置 / 时长 / 状态事件回写，Android / iOS 也能播。 |
+| `core/music/system_backend.py` | macOS 桌面兜底：`afconvert` 转临时 WAV + `sounddevice` 写 PCM + `numpy` 调音量；flet-audio 扩展缺失时才用，避开 SDL dylib dlopen 失败。 |
 | `core/music/selftest.py` | `python -m core.music.selftest`：曲库扫描、时长、播放状态机、系统音频回退、悬浮窗构建，不写用户设置。 |
 
 > 为什么不用 `ft.Audio`：flet 1.0.4 已移除该控件。音频走 Python 侧 pygame，

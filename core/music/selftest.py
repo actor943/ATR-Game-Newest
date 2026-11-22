@@ -24,6 +24,7 @@ class _FakePage:
 
     def __init__(self) -> None:
         self.controls: list[ft.Control] = []
+        self.services: list[ft.Control] = []
         self._overlay: list[ft.Control] = []
         self.width = 1200.0
         self.height = 800.0
@@ -109,6 +110,21 @@ def _case_player() -> None:
         settings_mod.Settings.save = original      # type: ignore[method-assign]
 
 
+def _case_flet_backend() -> None:
+    """全平台首选后端：flet-audio 服务挂进 page.services。"""
+    page = _FakePage()
+    p = MusicPlayer()
+    p.attach_page(page)
+    assert p.backend_name == "flet", f"后端没切到 flet-audio：{p.reason}"
+    assert len(page.services) == 1, "Audio 服务必须挂进 page.services"
+    audio = page.services[0]
+    shim = p._pygame
+    shim.load("On My Way.mp3")
+    assert audio.src == "songs/On My Way.mp3", audio.src
+    shim.set_volume(0.3)
+    assert abs(audio.volume - 0.3) < 1e-9
+
+
 def _case_system_backend() -> None:
     """模拟打包后 pygame 加载失败，验证自动回退到系统音频后端。"""
     if platform.system() != "Darwin":
@@ -165,6 +181,7 @@ def main() -> int:
     cases = [
         ("曲库扫描与时长", _case_library),
         ("播放状态机", _case_player),
+        ("flet-audio 首选后端", _case_flet_backend),
         ("系统音频回退", _case_system_backend),
         ("悬浮窗控件", _case_overlay),
     ]
