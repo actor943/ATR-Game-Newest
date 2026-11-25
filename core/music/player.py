@@ -16,13 +16,23 @@ from __future__ import annotations
 
 import os
 import platform
+import random
 import time
+from enum import IntEnum
 from typing import Callable, Optional
 
 from . import library
 from .library import Track
 
 Listener = Callable[[], None]
+
+
+class PlayMode(IntEnum):
+    """循环按钮依次切换的三种模式。"""
+
+    SEQUENCE = 0     # 播完按顺序下一首，播到末尾回到开头
+    REPEAT_ONE = 1   # 单曲循环
+    SHUFFLE = 2      # 随机循环：每首播完后随机挑一首（不重复当前曲）
 
 
 class MusicPlayer:
@@ -34,7 +44,8 @@ class MusicPlayer:
         self._volume = 0.65
         self._playing = False
         self._paused = False
-        self._loop = False
+        self._mode = PlayMode.SEQUENCE
+        self._history: list[int] = []
         self._reason = ""
         self._backend_checked = False
         self._backend_ok = False
@@ -87,8 +98,17 @@ class MusicPlayer:
         return self._volume
 
     @property
+    def mode(self) -> PlayMode:
+        return self._mode
+
+    @property
     def loop(self) -> bool:
-        return self._loop
+        """兼容旧接口：只有「单曲循环」算 loop。"""
+        return self._mode == PlayMode.REPEAT_ONE
+
+    @property
+    def shuffle(self) -> bool:
+        return self._mode == PlayMode.SHUFFLE
 
     @property
     def available(self) -> bool:
@@ -153,6 +173,10 @@ class MusicPlayer:
             services = page.services
             if shim.audio not in services:
                 services.append(shim.audio)
+            try:
+                page.update()           # 让 Audio service 真正注册到 Flutter
+            except Exception:           # noqa: BLE001 — 页面还没就绪
+                pass
             self._pygame = shim
             self._backend_name = "flet"
             self._backend_ok = True
@@ -281,7 +305,19 @@ class MusicPlayer:
         if not self._tracks:
             self.notify()
             return False
-        index = (self._index + delta) % len(self._tracks)
+        if self._mode == PlayMode.SHUFFLE:
+            if delta < 0 and self._history:
+                # 随机模式下「上一首」回到真正听过的上一首
+                index = self._history.pop()
+            else:
+                if delta > 0:
+                    self._history.append(self._index)
+                    self._history = self._history[-len(self._tracks):]
+                index = random.randrange(len(self._tracks))
+                if len(self._tracks) > 1 and index == self._index:
+                    index = (index + 1) % len(self._tracks)
+        else:
+            index = (self._index + delta) % len(self._tracks)
         if self._playing:
             return self.play(index)
         self._index = index
@@ -346,11 +382,21 @@ class MusicPlayer:
                 pass
         self.notify()
 
-    def set_loop(self, value: bool) -> None:
-        """单曲循环开关。"""
-        self._loop = bool(value)
+    def set_mode(self, mode: PlayMode | int) -> None:
+        """设置播放模式（0 顺序 / 1 单曲循环 / 2 随机循环）。"""
+        self._mode = PlayMode(int(mode))
+        self._history.clear()
         self.persist()
         self.notify()
+
+    def cycle_mode(self) -> PlayMode:
+        """点循环按钮：顺序 → 单曲循环 → 随机循环 → 顺序。"""
+        self.set_mode((int(self._mode) + 1) % len(PlayMode))
+        return self._mode
+
+    def set_loop(self, value: bool) -> None:
+        """兼容旧调用：True=单曲循环，False=顺序。"""
+        self.set_mode(PlayMode.REPEAT_ONE if value else PlayMode.SEQUENCE)
 
     def tick(self) -> bool:
         """由 UI 定时器每 0.5 秒调一次：检测播完并自动下一首。
@@ -371,7 +417,7 @@ class MusicPlayer:
                 return False
         except Exception:                   # noqa: BLE001
             return False
-        if self._loop:
+        if self._mode == PlayMode.REPEAT_ONE:
             self.play(self._index)
             return False
         self.next()
@@ -437,7 +483,7 @@ class MusicPlayer:
             from core.settings import Settings
             settings = Settings.load()
             self._volume = max(0.0, min(1.0, float(settings.music_volume)))
-            self._loop = bool(settings.music_loop)
+            self._mode = PlayMode(settings.music_mode)
             if self._tracks:
                 names = {t.filename: i for i, t in enumerate(self._tracks)}
                 self._index = names.get(settings.music_track, 0)
@@ -445,12 +491,14 @@ class MusicPlayer:
             pass
 
     def persist(self) -> None:
-        """把音量 / 当前曲目 / 循环状态写回 settings.json（失败不影响播放）。"""
+        """把音量 / 当前曲目 / 播放模式写回 settings.json（失败不影响播放）。"""
         try:
             from core.settings import Settings
             settings = Settings.load()
             settings.music_volume = self._volume
-            settings.music_loop = self._loop
+            settings.music_mode = int(self._mode)
+            # 旧字段同步一下，方便旧版本 / 外部工具读取
+            settings.music_loop = self._mode == PlayMode.REPEAT_ONE
             settings.music_track = (
                 self.current.filename if self.current else "")
             settings.save()

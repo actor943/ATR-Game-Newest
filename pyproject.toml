@@ -14,6 +14,9 @@ dependencies = [
     # 版本必须与 flet 对齐；包内自带 flutter/flet_audio 扩展，flet build 会
     # 自动注册到各平台（含 Android / iOS），手机端不用再装 pygame（没有 wheel）。
     "flet-audio==1.0.4",
+    # 3D 台球：Android / iOS / macOS 用官方 WebView 控件全屏内嵌页面。
+    # Windows / Linux 不支持该控件，运行时自动改走独立原生窗口。
+    "flet-webview==1.0.4",
     # ⚠ 房间语音的 numpy / sounddevice **不要**放这里：这是「所有平台」的公共
     #   依赖，放进来 Android / iOS / Web 包也会去装 sounddevice —— 它没有
     #   对应平台的 wheel，构建直接失败；手机端也用不到 PortAudio。
@@ -31,14 +34,14 @@ dependencies = [
 # ---------------------------------------------------------------
 
 [tool.flet.macos]
-# 只放房间语音库；音乐走全平台 flet-audio，不再打包任何 SDL 动态库。
-dependencies = ["numpy>=1.26", "sounddevice>=0.4.6"]
+# 房间语音库 + 3D 台球独立窗口（pywebview 走系统 WKWebView）。
+dependencies = ["numpy>=1.26", "sounddevice>=0.4.6", "pywebview==6.2.1"]
 
 [tool.flet.windows]
-dependencies = ["numpy>=1.26", "sounddevice>=0.4.6"]
+dependencies = ["numpy>=1.26", "sounddevice>=0.4.6", "pywebview==6.2.1"]
 
 [tool.flet.linux]
-dependencies = ["numpy>=1.26", "sounddevice>=0.4.6"]
+dependencies = ["numpy>=1.26", "sounddevice>=0.4.6", "pywebview==6.2.1"]
 
 # 内置音乐播放器（core/music）：统一用 [project].dependencies 里的 flet-audio
 # 扩展，全平台同一套播放代码；core/music/player.py 仍保留 pygame / macOS

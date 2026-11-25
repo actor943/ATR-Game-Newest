@@ -19,7 +19,7 @@ from core import responsive
 from core.i18n import t
 from core.theme import T
 
-from .player import MusicPlayer
+from .player import MusicPlayer, PlayMode
 
 
 def _time(seconds: float) -> str:
@@ -369,9 +369,11 @@ class FloatingPlayer:
         for button in (self.expand_btn, self.c_expand_btn):
             button.icon = expand_icon
         self.prev_btn.disabled = not player.tracks
-        self.loop_btn.icon = (
-            ft.Icons.REPEAT_ON if player.loop else ft.Icons.REPEAT
-        )
+        self.loop_btn.icon = {
+            PlayMode.SEQUENCE: ft.Icons.REPEAT,
+            PlayMode.REPEAT_ONE: ft.Icons.REPEAT_ON,
+            PlayMode.SHUFFLE: ft.Icons.SHUFFLE,
+        }[player.mode]
 
         duration = player.duration()
         position = player.position()
@@ -441,7 +443,11 @@ class FloatingPlayer:
         for button in (self.expand_btn, self.c_expand_btn):
             button.tooltip = expand_tip
         self.prev_btn.tooltip = t("music.prev")
-        self.loop_btn.tooltip = t("music.loop")
+        self.loop_btn.tooltip = {
+            PlayMode.SEQUENCE: t("music.mode_sequence"),
+            PlayMode.REPEAT_ONE: t("music.mode_repeat"),
+            PlayMode.SHUFFLE: t("music.mode_shuffle"),
+        }[self.player.mode]
         self.close_btn.tooltip = t("music.hide")
         self.volume_btn.tooltip = t("music.volume")
         self._tracks_label.value = t("music.library",
@@ -491,7 +497,7 @@ class FloatingPlayer:
         self.player.previous()
 
     def _on_loop(self, _e=None) -> None:
-        self.player.set_loop(not self.player.loop)
+        self.player.cycle_mode()
 
     def _on_mute(self, _e=None) -> None:
         if self.player.volume > 0:

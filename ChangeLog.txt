@@ -1,5 +1,36 @@
 Version: 0.4.10
 
+0.4.10-新增（音乐播放器：随机循环）:
+循环按钮改成三态切换：顺序播放 → 单曲循环 → 随机循环 → 顺序播放；
+	图标分别是 REPEAT / REPEAT_ON / SHUFFLE，提示文字会说明下一态
+随机循环下播完随机挑一首（不会连着播同一首），「上一首」会回到真正
+	听过的上一曲（内部维护历史栈）；切模式会清空历史
+设置新增 music_mode（0/1/2），旧配置的 music_loop=True 自动映射成单曲
+	循环；写回时两个字段同步，兼容旧版本
+自检新增三态切换与随机切歌 / 历史回退断言，5/5 通过
+
+0.4.10-修正（源码版也没声音：Audio 初始化时 src 为空）:
+原因一：fta.Audio 创建时 src=""。Dart 的 AudioService.init() 会立刻
+	update()，其中对空 src 直接抛 `Audio must have "src" specified.`，
+	服务初始化就废了，后面 play() 自然全无声（源码 / 打包都一样）
+	改为用当前曲目构造非空 src（无曲目时用占位路径）
+原因二：flet_audio 的 Dart `play()` 只做 seek + resume，**不会自己
+	setSource**，必须等 update() 异步 setSource 完（loaded 事件）再 play。
+	之前换歌后立刻 play，经常抢在 setSource 前，等于对空 source 播放
+	新增 on_loaded 回调 + _src_ready / _pending_start_ms：先记下播放请求，
+	Flutter 报 loaded 后再真正派发 play
+自检：断言初始 src 非空、loaded 回调已注册
+
+0.4.10-修正（装机版点了播放没反应 / 进度条不走）:
+原因一：flet-audio 的位置 / 时长 / 状态回调是构造完 Audio 后才赋值的，
+	Flutter 侧没收到事件订阅 —— 实际在放但进度永远是 0，也没报错。
+	改为构造 Audio 时就把三个回调传进去（holder 间接引用 shim）
+原因二：换 src 后只调了 audio.update() 就立刻 play，Flutter 可能还没
+	收到新 src；现在换歌后额外 page.update() 刷一次再派发 play
+加固：FletAudioMusic 自带本地播放时钟（play/pause/seek/state 同步），
+	get_pos() 取「事件值 / 本地时钟」较大者，即使事件没上来进度条也会走
+自检：断言三个事件回调可调用、play 后 0.25 秒进度 > 100ms、暂停后冻结
+
 0.4.10-修正（打包版启动崩溃：'FletAudioMusic' has no attribute 'mixer'）:
 原因：player._music() 统一走 ``self._pygame.mixer.music``，但挂 flet-audio
 	时把 FletAudioMusic 直接赋给了 _pygame，少了 pygame 的 mixer 层级；

@@ -1,0 +1,282 @@
+import { Container } from "../container/container"
+import { WatchShot } from "../controller/watchshot"
+import { getButton } from "../utils/dom"
+import { Session } from "../network/client/session"
+import { ConcedeEvent } from "../events/concedeevent"
+import { ExportUtils } from "../utils/export-utils"
+import { t } from "../utils/i18n"
+
+export class Menu {
+  container: Container
+  share: HTMLButtonElement
+  diagram: HTMLButtonElement
+  camera: HTMLButtonElement
+  concede: HTMLButtonElement
+  help: HTMLButtonElement
+  analysis: HTMLButtonElement
+  ffwd: HTMLButtonElement
+  chromeless: HTMLButtonElement
+  fullscreen: HTMLButtonElement
+  menuDropdown: HTMLDetailsElement | null
+
+  disabled = true
+
+  constructor(container) {
+    this.container = container
+
+    this.share = this.getElement("share")
+    this.diagram = this.getElement("diagram")
+    this.camera = this.getElement("camera")
+    this.concede = this.getElement("concede")
+    this.help = this.getElement("help")
+    this.analysis = this.getElement("analysis")
+    this.ffwd = this.getElement("ffwd")
+    this.chromeless = this.getElement("chromeless")
+    this.fullscreen = this.getElement("fullscreen")
+    this.menuDropdown = document.getElementById(
+      "menuDropdown"
+    ) as HTMLDetailsElement | null
+
+    this.setModeNavVisible(
+      this.container.isSinglePlayer ||
+        this.container.replayMode ||
+        Session.isBotMode() ||
+        Session.isSpectator()
+    )
+
+    if (this.analysis) {
+      this.analysis.onclick = () => this.handleExport(true)
+    }
+
+    if (this.ffwd) {
+      this.ffwd.onmousedown = (e) => {
+        e.preventDefault()
+        this.container.fastForwardActive = true
+      }
+      this.ffwd.ontouchstart = (e) => {
+        e.preventDefault()
+        this.container.fastForwardActive = true
+      }
+      this.ffwd.onmouseup = () => {
+        this.container.fastForwardActive = false
+      }
+      this.ffwd.onmouseleave = () => {
+        this.container.fastForwardActive = false
+      }
+      this.ffwd.ontouchend = () => {
+        this.container.fastForwardActive = false
+      }
+      this.ffwd.ontouchcancel = () => {
+        this.container.fastForwardActive = false
+      }
+    }
+
+    if (this.diagram) {
+      this.diagram.onclick = () => this.handleExport(false)
+    }
+
+    if (this.fullscreen) {
+      this.fullscreen.onclick = (_) => {
+        this.toggleFullscreen()
+        if (this.menuDropdown) {
+          this.menuDropdown.open = false
+        }
+      }
+    }
+
+    this.setShareVisible(false)
+    this.setDiagramVisible(false)
+    this.setFfwdVisible(false)
+    if (this.camera) {
+      this.camera.onclick = (_) => {
+        this.adjustCamera()
+      }
+    }
+    if (this.help) {
+      this.help.onclick = (_) => {
+        this.toggleHelpOverlay()
+        if (this.menuDropdown) {
+          this.menuDropdown.open = false
+        }
+      }
+    }
+    if (this.chromeless) {
+      this.chromeless.onclick = (_) => {
+        this.toggleChromeless()
+        if (this.menuDropdown) {
+          this.menuDropdown.open = false
+        }
+      }
+    }
+    if (this.container.freeAim) {
+      // Free-aim games start chromeless; the L key (or menu button) can still
+      // toggle out of it.
+      document.body.classList.add("chromeless")
+    }
+    const aboutPanel = document.getElementById("about-more")
+    if (aboutPanel) {
+      // Find-in-page fires beforematch before a hidden="until-found" panel is
+      // revealed; open it properly so the overlay layout and close button
+      // apply rather than a bare uncollapsed block.
+      aboutPanel.addEventListener("beforematch", () => this.setHelpOpen(true))
+    }
+    const closeBtn = document.getElementById("aboutClose")
+    if (closeBtn) {
+      closeBtn.onclick = () => this.setHelpOpen(false)
+    }
+    if (this.concede) {
+      this.concede.onclick = (_) => {
+        this.container.notification.show(
+          {
+            type: "Info",
+            title: t("Concede Game"),
+            subtext: this.container.isSinglePlayer
+              ? "game will end"
+              : "opponent will win",
+            extra:
+              '<button class="notification-btn" data-notification-action="concede-confirm">' +
+              t("Concede") +
+              "</button>" +
+              '<button class="notification-btn" data-notification-action="concede-cancel">' +
+              t("Play on") +
+              "</button>",
+            duration: 0,
+          },
+          0,
+          {
+            "concede-confirm": () => {
+              this.container.notification.clear()
+              // The "conceded" marker makes the conceding player lose
+              // regardless of score (see MatchResultHelper.determineWinner).
+              if (this.container.isSinglePlayer || Session.isBotMode()) {
+                this.container.updateController(
+                  this.container.rules.handleGameEnd(false, "You conceded")
+                )
+              } else {
+                this.container.updateController(
+                  this.container.rules.handleGameEnd(false, "You conceded")
+                )
+                this.container.sendEvent(new ConcedeEvent())
+              }
+            },
+            "concede-cancel": () => this.container.notification.clear(),
+          }
+        )
+      }
+    }
+  }
+
+  private handleExport(isAnalysis: boolean) {
+    const init = this.container.lastShotInit
+    const shot = this.container.lastShotData
+    if (init && shot) {
+      const urlParams = new URLSearchParams(globalThis.location?.search ?? "")
+      const tableSize = parseFloat(urlParams.get("tableSize") || "10")
+      const url = ExportUtils.getExportUrl(
+        isAnalysis,
+        this.container.rules.rulename,
+        init,
+        shot,
+        tableSize
+      )
+      window.open(url, "_blank")
+    }
+  }
+
+  adjustCamera() {
+    const camera = this.container.view.camera
+    if (
+      this.container.controller instanceof WatchShot &&
+      camera.mode === camera.topView
+    ) {
+      camera.cycleModeToAimz()
+    } else {
+      camera.cycleMode()
+    }
+    this.container.lastEventTime = performance.now()
+  }
+
+  getElement(id): HTMLButtonElement {
+    return getButton(id)!
+  }
+
+  setShareVisible(visible: boolean) {
+    if (!this.share) {
+      return
+    }
+    this.share.hidden = !visible
+    this.share.disabled = !visible
+  }
+
+  setDiagramVisible(visible: boolean) {
+    if (!this.diagram) {
+      return
+    }
+    this.diagram.hidden = !visible
+    this.diagram.disabled = !visible
+  }
+
+  setConcedeVisible(visible: boolean) {
+    if (this.concede) {
+      this.concede.hidden = !visible
+      this.concede.disabled = !visible
+    }
+  }
+
+  setAnalysisVisible(visible: boolean) {
+    if (this.analysis) {
+      this.analysis.hidden = !visible
+      this.analysis.disabled = !visible
+    }
+  }
+
+  /** Game-mode links only make sense away from live two-player games. */
+  setModeNavVisible(visible: boolean) {
+    const playSection = document.querySelector<HTMLElement>(".play-section")
+    if (playSection) {
+      playSection.hidden = !visible
+    }
+  }
+
+  setFfwdVisible(visible: boolean) {
+    if (this.ffwd) {
+      this.ffwd.hidden = !visible
+      this.ffwd.disabled = !visible
+    }
+  }
+
+  toggleChromeless() {
+    document.body.classList.toggle("chromeless")
+  }
+
+  toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen()
+    } else if (document.exitFullscreen) {
+      document.exitFullscreen()
+    }
+  }
+
+  toggleHelpOverlay() {
+    const panel = document.getElementById("about-more")
+    if (panel) {
+      this.setHelpOpen(panel.hasAttribute("hidden"))
+    }
+  }
+
+  /** hidden="until-found" is the resting state: closed, but findable. */
+  setHelpOpen(open: boolean) {
+    const panel = document.getElementById("about-more")
+    if (!panel) {
+      return
+    }
+    if (open) {
+      panel.removeAttribute("hidden")
+    } else {
+      panel.setAttribute("hidden", "until-found")
+    }
+    if (this.help) {
+      this.help.setAttribute("aria-expanded", open ? "true" : "false")
+    }
+  }
+}

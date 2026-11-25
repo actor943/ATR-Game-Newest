@@ -16,7 +16,7 @@ from core import settings as settings_mod
 
 from . import library
 from .floating import FloatingPlayer
-from .player import MusicPlayer
+from .player import MusicPlayer, PlayMode
 
 
 class _FakePage:
@@ -103,6 +103,18 @@ def _case_player() -> None:
         assert p.select(7)
         assert p.index == 7
         assert p.tick() is False, "没播放时 tick 不该自动切歌"
+
+        # 循环按钮：顺序 → 单曲循环 → 随机循环 → 顺序
+        p.set_mode(PlayMode.SEQUENCE)
+        assert p.cycle_mode() == PlayMode.REPEAT_ONE
+        assert p.cycle_mode() == PlayMode.SHUFFLE
+        assert p.cycle_mode() == PlayMode.SEQUENCE
+        p.set_mode(PlayMode.SHUFFLE)
+        before = p.index
+        assert p.next() and p.index != before, "随机模式不该继续播相邻曲目"
+        assert p.previous() and p.index == before, "随机模式上一首应回到听过的曲"
+        p.set_mode(PlayMode.SEQUENCE)
+
         assert isinstance(p.available, bool)
         if not p.available:
             assert p.reason, "后端不可用时必须给出原因"
@@ -118,6 +130,12 @@ def _case_flet_backend() -> None:
     assert p.backend_name == "flet", f"后端没切到 flet-audio：{p.reason}"
     assert len(page.services) == 1, "Audio 服务必须挂进 page.services"
     audio = page.services[0]
+    assert audio.src and audio.src.startswith("songs/") and \
+        audio.src.endswith(".mp3"), "Audio 初始 src 不能为空，否则 Flutter 初始化抛错"
+    assert callable(audio.on_position_change), "位置事件没注册，进度条会永远不动"
+    assert callable(audio.on_duration_change), "时长事件没注册"
+    assert callable(audio.on_state_change), "状态事件没注册"
+    assert callable(audio.on_loaded), "loaded 事件没注册，play 可能被挂起"
     shim = p._pygame
     assert shim.mixer.music is shim, "缺 mixer 层级会让 _music() 直接崩溃"
     assert p._music() is shim, "player._music() 必须拿到同一个后端对象"
@@ -125,6 +143,18 @@ def _case_flet_backend() -> None:
     assert audio.src == "songs/On My Way.mp3", audio.src
     shim.set_volume(0.3)
     assert abs(audio.volume - 0.3) < 1e-9
+
+    # 自检桩不会真的跑 Flutter 协程：没有位置事件时本地时钟也必须推进，
+    # 否则装机版一旦事件没上来，进度条就会永远停在 0。
+    shim.play()
+    import time
+    time.sleep(0.25)
+    assert shim.get_pos() > 100, f"本地进度时钟没走：{shim.get_pos()}"
+    shim.pause()
+    frozen = shim.get_pos()
+    time.sleep(0.15)
+    assert shim.get_pos() == frozen, "暂停后进度应停住"
+    shim.stop()
 
 
 def _case_system_backend() -> None:

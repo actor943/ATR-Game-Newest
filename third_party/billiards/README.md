@@ -1,0 +1,444 @@
+# Billiards - Free online pool and billiards game
+
+[![codecov](https://codecov.io/gh/tailuge/billiards/branch/master/graph/badge.svg?token=BH11KRAEL0)](https://codecov.io/gh/tailuge/billiards)
+[![CodeFactor](https://www.codefactor.io/repository/github/tailuge/billiards/badge)](https://www.codefactor.io/repository/github/tailuge/billiards)
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=tailuge_billiards&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=tailuge_billiards)
+[![Tests](https://github.com/tailuge/billiards/actions/workflows/main.yml/badge.svg)](https://github.com/tailuge/billiards/actions/workflows/main.yml)
+[![Open in Gitpod](https://img.shields.io/badge/Gitpod-Open%20in%20Gitpod-%230092CF.svg)](https://gitpod.io/#https://github.com/tailuge/billiards)
+![GitHub](https://img.shields.io/github/license/tailuge/billiards.svg)
+
+[![Free online 3D pool and billiards game running in a browser, WebGL table viewed from behind the cue ball](https://raw.githubusercontent.com/tailuge/billiards/master/dist/images/promo.png)](https://billiards.tailuge.workers.dev/?bot=TheFarJaw)
+
+This is an open-source project bringing unsophisticated billiards physics written in TypeScript to the browser.
+
+## Online Demo
+
+Demos run in all major desktop and mobile browsers and use WebGL.
+
+* [Nine ball ⬀](https://billiards.tailuge.workers.dev/?practice=true) make a break and share replay link with friends
+* [Three cushion billiards ⬀](https://billiards.tailuge.workers.dev/?ruletype=threecushion&lod=4) the ultimate test of physics and player (average on both counts). You need the [beginner mode ⬀](https://billiards.tailuge.workers.dev/?ruletype=threecushion&practice=true). Try the [practice mode ⬀](https://velikodimov.github.io/billiards/dist/index.html?ruletype=threecushion&practice&drill) to drill specific shots.
+* [Sagu ⬀](https://billiards.tailuge.workers.dev/?ruletype=sagu) Korean four-ball carom game. Try [sagu on a 5ft table ⬀](https://billiards.tailuge.workers.dev/?ruletype=sagu&tableSize=5).
+* [Snooker ⬀](https://billiards.tailuge.workers.dev/?ruletype=snooker&lod=4&tableSize=12) we await the first 147 submission to the leaderboard.
+* [8-Ball ⬀](https://billiards.tailuge.workers.dev/?ruletype=eightball&lod=4) try it in Hi-Res mode!
+* [Libre ⬀](https://billiards.tailuge.workers.dev/challenge/) try and top the high scores.
+* Play vs the [Claw ⬀](https://billiards.tailuge.workers.dev/?bot=ClawBreak) and [TheFarJaw ⬀](https://billiards.tailuge.workers.dev/?bot=TheFarJaw).
+* Try [Multiplayer online](https://billiards.tailuge.workers.dev/lobby.html) pool lobby.
+* Try to get on the leaderboard of highest [breaks](https://scoreboard-tailuge.vercel.app/leaderboard) hosted on Vercel.
+* Inspect physics and tweak constants using [diagrams](https://tailuge.github.io/billiards/dist/diagrams/diagrams.html).
+* Set up trick shots and [practice ⬀](https://billiards.tailuge.workers.dev/practice.html).
+* Tune three cushion [physics ⬀](https://tailuge.github.io/billiards/dist/diagrams/three.html) and [optimise ⬀](https://tailuge.github.io/billiards/dist/fit/viewer.html) parameters
+* Parallel [parameter ⬀](https://tailuge.github.io/billiards/dist/fit/common.html) tuning using [Web Workers ⬀](https://tailuge.github.io/billiards/dist/ww.html).
+* Three cushion trainer and [sensitivity analysis ⬀](https://velikodimov.github.io/billiards/dist/index.html?ruletype=threecushion&practice&drill) from an excellent [fork ⬀](https://github.com/velikodimov/billiards) of this project.
+* Another great fork for [Italian 5 pin](https://gameland.altervista.org/italian_billiards/lobby.html).
+* Generate SVG and PNG [diagrams](https://billiards.tailuge.workers.dev/diagrams/export?ruletype=threecushion&init=%5B0.12664656341075897%2C-0.566656768321991%2C-0.8321752548217773%2C0.6028573513031006%2C0.2764659821987152%2C0.1675983965396881%5D&initShot=%7B%22cueBallId%22%3A0%2C%22angle%22%3A1.2879289388656616%2C%22power%22%3A2.619999885559082%2C%22offset%22%3A%7B%22x%22%3A-0.28158292174339294%2C%22y%22%3A0.35101431608200073%7D%2C%22elevation%22%3A0%7D) of shots for blog posts.
+* Race against the clock to clear the table in a [speedrun](https://billiards.tailuge.workers.dev/speedrun/index.html).
+* Customise your [cue](https://billiards.tailuge.workers.dev/cue) and [emblem](https://billiards.tailuge.workers.dev/wall) for other players to see
+* Sit a hand curated [exam](https://billiards.tailuge.workers.dev/exam/index.html) to assess your level of play.
+* Measure your progress in rated games by tracking your [ELO](https://scoreboard-tailuge.vercel.app/elo) (Glicko2).
+* Reveal [textures](https://billiards.tailuge.workers.dev/reveal/) on the table cloth by potting balls in straight pool.
+* Invite friends and play to win as many games as you can in 30 mins in [hourly arenas](https://billiards.tailuge.workers.dev/arena.html) ([lichess.org](https://lichess.org/) style)
+
+## Features
+
+* Backspin, sidespin and cushion bounces well modeled.
+* Presentation using WebGL in any modern browser on mobile, linux, mac or windows.
+* Record and playback breaks.
+* Two player online mode with nchan nginx server.
+* Nine ball, snooker, three cushion and Sagu billiards rules.
+* Deploys to GitHub Pages, Vercel and Render with GitHub Actions.
+* Runs on and was developed mostly on a potato e.g. Raspberry Pi 4.
+
+## Install
+
+You dont, you just play in your browser at [billiards.tailuge.workers.dev/lobby](https://billiards.tailuge.workers.dev/lobby)
+
+If you prefer, you can install a thin client wrapper:
+
+* Windows / macOS / Linux: [Download](https://github.com/tailuge/tbilliards/releases/latest)
+* Android: [Download](https://github.com/tailuge/wbilliards/releases/latest) directly, or via [APKPure](https://apkpure.com/billiards/dev.tailuge.billiards) or [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/tailuge/wbilliards)
+
+## Reference material
+
+* Papers on ball mechanics [Han 2005](https://billiards.colostate.edu/physics_articles/Han_paper.pdf)
+with important corrections by [Kiefl](https://ekiefl.github.io/2020/04/24/pooltool-theory/#3-han-2005).
+* [cushions](https://billiards.colostate.edu/physics_articles/Mathavan_IMechE_2010.pdf), [max spin](https://billiards.colostate.edu/technical_proofs/new/TP_B-17.pdf),
+simulation and constants [1](https://savoirs.usherbrooke.ca/bitstream/handle/11143/6598/MR91690.pdf?sequence=1)
+[2](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.89.4627&rep=rep1&type=pdf)
+[3](https://www.researchgate.net/publication/228634093_Bounce_of_a_spinning_ball_near_normal_incidence)
+[4](https://billiards.colostate.edu/technical_proofs/new/TP_B-6.pdf)
+[5](https://billiards.colostate.edu/faq/physics/physical-properties/)
+* 3D graphics uses [three.js](https://threejs.org/docs/index.html#api/math/Vector3)
+* Inline [LaTeX](https://www.codecogs.com/eqnedit.php?latex=\dot{a}) editor
+for equations in README.md
+
+### Key equations
+
+Based on [Han 2005](https://billiards.colostate.edu/physics_articles/Han_paper.pdf) paper
+
+#### surface velocity
+
+$$\vec{v}_a = \vec{v} + (\vec{up} \times R\vec{\omega})$$
+
+#### sliding motion
+
+$$\dot{v} = -\mu g \frac{\vec{v}_a}{|\vec{v}_a|}$$
+
+$$\dot{\omega} = -\frac{5}{2}\frac{\mu g}{R} \frac{\vec{v}_a}{|\vec{v}_a|}$$
+
+$$\dot{\omega}_z = -\frac{5}{2}\frac{M_z}{mR^2} \text{sgn}(\omega_z)$$
+
+#### rolling motion
+
+$$\dot{v} = -\frac{5}{7}\frac{M_{xy}}{mR} \frac{\vec{up} \times \vec{\omega}}{|\vec{\omega}|}$$
+
+$$\dot{\omega} = -\frac{5}{7}\frac{M_{xy}}{mR^2} \frac{\vec{\omega}}{|\vec{\omega}|}$$
+
+where
+
+$M_{xy} = \frac{7}{5\sqrt{2}} R \mu m g$ , $M_z = \frac{2}{3} \mu m g \rho$
+
+#### collisions
+
+Based on paper by [Alciatore](https://billiards.colostate.edu/technical_proofs/new/TP_A-14.pdf) incorporating throw effect due to the small amount of friction between balls. Figures to prove consistency between the [code](./src/model/physics/collisionthrow.ts) and paper can be found in the [Mathavan model validation diagram](https://tailuge.github.io/billiards/dist/diagrams/mathavan.html).
+
+For ball $a$:
+
+$$\vec{v}_a \leftarrow \vec{v}_a + \frac{J_{\text{normal}}}{m}\hat{n} + \frac{J_{\text{tangential}}}{m}\hat{t}$$
+
+$$\vec{\omega}_a \leftarrow \vec{\omega}_a + \frac{1}{I} (\vec{r}_a \times \vec{J}_{\text{tangential}})$$
+
+For ball $b$:
+
+$$\vec{v}_b \leftarrow \vec{v}_b - \frac{J_{\text{normal}}}{m}\hat{n} - \frac{J_{\text{tangential}}}{m}\hat{t}$$
+
+$$\vec{\omega}_b \leftarrow \vec{\omega}_b + \frac{1}{I} (\vec{r}_b \times \vec{J}_{\text{tangential}})$$
+
+Where:
+
+The relative velocity at the point of contact is computed as:
+
+$$\vec{v}_{\text{rel}} = (\vec{v}_a - \vec{v}_b) + \vec{r}_a \times \vec{\omega}_a - \vec{r}_b \times \vec{\omega}_b$$
+
+$$\vec{v}_{\text{slip}} = \vec{v}_{\text{rel}} - (\vec{v}_{\text{rel}} \cdot \hat{n}) \hat{n}$$
+
+$\vec{r}_a = -R \cdot \hat{n}$ and $\vec{r}_b = R \cdot \hat{n}$
+
+$J_{\text{normal}} = \frac{-(1 + e)v_{\text{rel,normal}}}{(2/m)}$
+
+$J_{\text{tangential}} = \min\left( \frac{\mu J_{\text{normal}}}{v_{\text{rel}}}, \frac{1}{7} \right)(-v_{\text{rel,tangential}})$
+
+$\hat{n}$: normal unit vector along the line of centers.
+
+$\hat{t}$: tangential unit vector perpendicular to $\hat{n}$.
+
+#### cushion bounce
+
+This is based on a paper by [Mathavan](https://billiards.colostate.edu/physics_articles/Mathavan_IMechE_2010.pdf). Many of the [figures](https://tailuge.github.io/billiards/dist/diagrams/mathavan.html) from the paper are recreated to confirm correctness.
+
+Slip velocity at cushion contact point I
+
+$$
+ẋ_I = \dot{v_x} + \dot{\omega_y} R \sin \theta - \dot{\omega_z} R \cos \theta \qquad
+ẏ'_I = -\dot{v_y} \sin \theta + \dot{\omega_x} R
+$$
+
+$$
+\phi = \arctan\left(\frac{ẏ'_I}{ẋ_I}\right) \qquad
+s = \sqrt{(ẋ_I)^2 + (ẏ'_I)^2}
+$$
+
+Slip velocity at table contact point C
+
+$$
+ẋ_C = \dot{v_x} - \dot{\omega_y} R \qquad
+ẏ_C = \dot{v_y} + \dot{\omega_x} R
+$$
+
+$$
+\phi' = \arctan\left(\frac{ẏ_C}{ẋ_C}\right) \qquad
+s' = \sqrt{(ẋ_C)^2 + (ẏ_C)^2}
+$$
+
+Numerical solutions for the centroid velocity of the ball during compression and restitution phases.
+
+$$
+(\dot{v_x})_{n+1} - (\dot{v_x})_n = - \frac{1}{M} \left[\mu_w \cos(\phi) + \mu_s \cos(\phi') \cdot (\sin \theta + \mu_w \sin(\phi) \cos \theta)\right] \Delta P_I
+$$
+
+$$
+(\dot{v_y})_{n+1} - (\dot{v_y})_n  = - \frac{1}{M} \left[ \cos \theta - \mu_w \sin \theta \sin \phi + \mu_s \sin \phi' \cdot \left( \sin \theta + \mu_w \sin \phi \cos \theta \right) \right] \Delta P_I
+$$
+
+Numerical solutions for angular velocity of ball
+
+$$
+(\dot{\omega_x})_{n+1}−(\dot{\omega_x})_n = -\frac{5}{2MR}[\mu_w \sin(\phi) + \mu_s \sin(\phi') \times (\sin(\theta) + \mu_w \sin(\phi)\cos(\theta))]\Delta P_I
+$$
+
+$$
+(\dot{\omega_y})_{n+1}−(\dot{\omega_y})_n = -\frac{5}{2MR}[\mu_w \cos(\phi)\sin(\theta) - \mu_s \cos(\phi') \times (\sin(\theta) + \mu_w \sin(\phi)\cos(\theta))]\Delta P_I
+$$
+
+$$
+(\dot{\omega_z})_{n+1}−(\dot{\omega_z})_n = \frac{5}{2MR}(\mu_w \cos(\phi)\cos(\theta))\Delta P_I
+$$
+
+$\theta$ is a constant of the angle of cushion contact above ball centre with $\sin(\theta) = 2/5$. $\mu_s$ is the coefficient of sliding friction between the ball and table surface. $\mu_w$ is the coefficient of sliding friction between the ball and the cushion.
+
+Work done by the normal force at contact point $I$ along the $Z'$-axis which is aligned from the ball centre to I
+
+$$
+W_{Z'}^I(P_I^{(n+1)}) = W_{Z'}^I(P_I^{(n)}) + \frac{\Delta P_I}{2} \left( z'_I(P_I^{(n+1)}) + z'_I(P_I^{(n)}) \right)
+$$
+
+The ball is assumed to be bouncing in the +y cushion. Compression phase iterates until
+
+$$\dot{v}_y \le 0$$
+
+For the restitution phase the iteration continues until the work done is
+
+$$W_{Z'}^I \ge e_e^2 W_{\text{compression}}$$
+
+Some of the Mathavan equations not supplied by the paper were inferred to bridge gaps for a complete numerical solution.
+
+#### Stronge compliant cushion model
+
+Based on the book *Impact Mechanics* by [Stronge](https://doi.org/10.1017/9781139050227). This analytical model accounts for the compliant nature of cushion deformation and resolves the collision across three slip regimes.
+
+Contact velocity at the cushion contact point:
+
+$$\vec{V}_c = \vec{v} - (\vec{\omega} \times R \hat{n})$$
+
+Regime classification is determined by the ratio $v_{\text{ratio}} = v_{t0} / v_{n0}$ and thresholds involving the friction coefficient $\mu$, restitution $e_n$, and mass-matrix coefficients $\beta$:
+
+| Regime | Condition |
+| :--- | :--- |
+| Gross slip | $v_{\text{ratio}} > \mu \left( (1 + e_n) \beta_{\text{ratio}} - \frac{\eta^2}{e_n} \right)$ |
+| Initial stick | $v_{\text{ratio}} < \mu \eta^2$ |
+| Slip-stick-slip | neither of the above |
+
+where $\eta^2$ is derived from the frequency ratio $\omega_t/\omega_n$.
+
+Velocity reconstruction from scalar solver results $v_{nf}$ and $v_{tf}$:
+
+$$\Delta v_n = \frac{v_{nf} - v_{n0}}{\beta_n} , \quad \Delta v_t = \frac{v_{tf} - v_{t0}}{\beta_t}$$
+
+Final updates:
+
+$$\vec{v} \leftarrow \vec{v} + \Delta v_n \hat{n} + \Delta v_t \hat{t}$$
+$$\vec{\omega} \leftarrow \vec{\omega} + \frac{mR}{I} (-\hat{n} \times \Delta v_t \hat{t})$$
+
+## Useful commands
+
+### Local setup and build
+
+```shell
+nvm use v24.11.0
+corepack enable
+yarn set version 4.9.1
+yarn install
+yarn build
+yarn gltfpack
+```
+
+This generates artefacts in /dist for prod deployment (e.g. on GitHub static pages).
+
+### Run
+
+```shell
+yarn serve
+```
+
+Then open <http://localhost:8080/> in your browser to play
+
+### Test
+
+```shell
+yarn test
+yarn coverage
+```
+
+### Maintain
+
+```shell
+yarn deps
+yarn upgrade -L
+yarn prettify
+```
+
+### Two player
+
+```shell
+yarn serve
+```
+
+then open <http://localhost:8080/multi.html> to see the options. The message server is public nchan.
+
+## Controls
+
+Use mouse, trackpad, touch screen or keyboard:
+
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">⇦</kbd>
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">⇨</kbd> Aim
+
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">Control</kbd>
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">⇦</kbd>
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">⇨</kbd> Fine aim
+
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">⇧</kbd>
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">⇩</kbd> Topspin and backspin
+
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">Shift</kbd>
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">⇦</kbd>
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">⇨</kbd> Side spin
+
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">Space</kbd> Hit - hold for more power
+
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">A</kbd> Toggle aim helper
+
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">M</kbd> Masse angle
+
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">O</kbd> Camera view
+
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">F</kbd> Full screen
+
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">C</kbd> Chat
+
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">H</kbd> Help
+
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">+</kbd>
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">-</kbd> Camera height
+
+### Mouse
+
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">scroll</kbd> Shot power
+
+<kbd style="border: 1px solid #aaa; border-radius: 0.2em; padding: 0.1em 0.3em; font-size: 0.85em;">dbl click</kbd> Hit
+
+## Trajectory fitting, machine learning & simulation
+
+The physics engine is deterministic and small enough to run in bulk: about 500 rollouts a second on 4 CPU cores in plain TypeScript, across worker threads, in the browser through Web Workers or headless under Node.
+
+That makes it usable for fitting the model against recorded shots from a real table, estimating rolling and sliding friction, spin decay, restitution and cushion deflection. The [multi-shot physics optimiser](https://tailuge.github.io/billiards/dist/fit/common.html) is where to start with that. It is also a fast test environment for reinforcement learning, continuous control, Monte Carlo tree search and synthetic data generation.
+
+The [Web Worker page](https://tailuge.github.io/billiards/dist/ww.html) documents the worker protocol, parallel rollouts, the headless Node scripts, batch processing and runtime parameter overrides.
+
+Contributions and experiments are welcome.
+
+## Progress snapshots
+
+July 2018
+
+![WebGL pool table rendered in the browser, July 2018](https://raw.githubusercontent.com/tailuge/billiards/master/dist/images/t1.png)
+
+March 2021
+
+![Snooker style table and refined cue rendering, March 2021](https://raw.githubusercontent.com/tailuge/billiards/master/dist/images/t3.png)
+
+August 2023 (mobile)
+
+| top | aim |
+| :--: | :--: |
+| <kbd>![Top-down camera view for planning shots on a mobile screen](https://raw.githubusercontent.com/tailuge/billiards/master/dist/images/mobile1.jpg)</kbd> | <kbd>![Aim view along the cue on a mobile touchscreen](https://raw.githubusercontent.com/tailuge/billiards/master/dist/images/mobile2.jpg)</kbd> |
+
+[![Billiards gameplay video from 2026](https://img.youtube.com/vi/jGNB_XLTjnU/0.jpg)](https://www.youtube.com/watch?v=jGNB_XLTjnU)
+
+![Three cushion on small table](https://raw.githubusercontent.com/tailuge/billiards/master/dist/images/minithree.png)
+
+![Sagu challenge](https://raw.githubusercontent.com/tailuge/billiards/master/dist/images/sagucard.jpg)
+
+![Three cushion](https://raw.githubusercontent.com/tailuge/billiards/master/dist/images/three630x500.png)
+
+## Star history
+
+[![RepoStars](https://www.repostars.dev/api/og?repos=tailuge/billiards&theme=light)](https://www.repostars.dev/api/og?repos=tailuge/billiards&theme=light)
+
+## Licence
+
+This project is open source and licensed under the GNU General Public License - see the [LICENSE](LICENSE) file for details.
+
+## Translations
+
+<details>
+<summary>🌐 Read this in 한국어 or 中文</summary>
+
+### 한국어
+
+설치도 가입도 필요 없는 무료 온라인 당구게임입니다. PC와 모바일의 웹 브라우저에서
+주소만 입력하면 바로 당구대에 섭니다. 3쿠션 게임과 사구(4구) 게임은 물론 9볼,
+스누커, 8볼 풀, 그리고 온라인 대전까지 한곳에서 이어집니다.
+
+정말 당구장의 물리엔진을 그대로 옮겨 놓았습니다. 밀어치기와 끌어치기,
+사이드스핀, 뒤스핀까지 공의 회전이 쿠션 반발에 미치는 영향까지 계산하고,
+연습용 작은 테이블에서 12피트 정식 타일까지 감각을 그대로 옮겼습니다.
+온라인 대전은 로비에서 지금 접속 중인 상대를 골라 바로 대국할 수 있고, 사람이
+적은 새벽에는 ClawBreak과 TheFarJaw 같은 연습 봇과 실전처럼 붙어 볼 수도
+있습니다.
+
+스냅샷 녹화와 리플레이, 다이아몬드 시스템 구도 훈련, 물리 다이어그램에서 상수를
+직접 바꿔보며 확인하는 기능, 그리고 Web Worker로 돌리는 배치 시뮬레이션까지
+담고 있습니다. 2018년부터 GitHub에서 공개적으로 발전해 온 오픈소스 당구
+프로젝트입니다.
+
+이 무료 사이트가 더 많은 당구인들에게 알려질 수 있도록 도와주세요.
+
+마음씨 좋은 분이 계시다면
+[네이버 3쿠션 카페](https://cafe.naver.com/3cushion)에 이 게임을 소개해 주시면
+정말 감사하겠습니다.
+
+당구를 사랑하는 여러분,
+[네이버 당구 카페](https://cafe.naver.com/8440566)에도 이 무료 온라인 당구 게임을
+널리 알려 주세요.
+
+함께 플레이하는 사람이 한 명씩 늘어날 때마다 이 프로젝트도 조금씩 더
+발전합니다.
+
+[네이버 블로그](https://blog.naver.com/jasuil/224416229214)
+[티스토리 블로그](https://news11213.tistory.com/1)
+
+### 中文
+
+免費線上斯諾克遊戲，免安裝、免註冊，打開瀏覽器就能直接開打。PC 與手機的網頁
+版都支援，3 庫撞球（卡羅姆）、9球、8 球台球、線上斯諾克，以及線上真人對戰，
+都能在線上遊戲大廳裡完成。
+
+物理效果是照著論文模型做出來的：桿法旋轉、走位角度到顆星反彈都算得出來，
+12呎正規賽桌和 6呎趣味模式各自保留不同手感。線上對戰可以挑對手直接下場，
+人少的時段也有 ClawBreak、TheFarJaw 兩支機器人陪你練。另有斷球重播、破壞
+練球、調整物理參數的圖表工具與 Web Worker 批次模擬，2018 年起在 GitHub
+上公開發展的開源撞球專案。
+
+</details>
+
+## Keywords
+
+billiards, billiards simulator, online billiards, free billiards game,
+pool game, snooker game, 8-ball, 9-ball, three-cushion billiards,
+three cushion carom, carom billiards, 4-ball billiards, open source billiards,
+ビリヤード, ビリヤードゲーム, 無料ビリヤード, 3クッション, スリークッション, 9ボール, 당구, 무료 당구, 온라인 당구, 당구 게임, 3쿠션,
+사구, 스누커, Bida 3 băng, bi-a 3 băng, Biliar 3 bandas, billar a tres bandas,
+billar de carambolas, jugar billar carambolas, billar online gratis,
+Üç bant bilardo, üç bant, driebanden, biljart, gratis biljart, biljart spel,
+Carom3D, ShootersPool
+
+## Mentions
+
+[Molbergen](https://pbc-molbergen.de/Simulator.html),
+[Bored](https://www.bored.com/link/tailuge-github-io-billiards/),
+[AZBilliards](https://forums.azbilliards.com/threads/open-source-three-cushion-simulator.587516/),
+[itch.io](https://tailuge.itch.io/),
+[SnookerForum](https://www.thesnookerforum.co.uk/board/forum/other-cuesports/billiards/1045334-3-cushion-billiards),
+[GameJolt](https://gamejolt.com/games/billiards/1083832),
+[Billard-aktuell](https://billard-aktuell.de/forum/viewtopic.php?t=59609),
+[Naver](https://blog.naver.com/jasuil/224416229214),
+[Tistory](https://news11213.tistory.com/1),
+[Ameblo](https://ameblo.jp/tailuge/entry-12981511558.html),
+[r/billiards](https://www.reddit.com/r/billiards/comments/1upm8vu/speedrun/),
+[FMHY](https://github.com/fmhy/FMHY/wiki/Gaming),
+[AppImageHub](https://www.appimagehub.com/p/2365428/),
+[WebGames](https://webgames.me/play/billards-by-tailuge),
+[IOGame](https://iogame.io/games/billards-by-tailuge),
+[RepoRank](https://reporank.net/en/repo/tailuge-billiards.html#repo-feedback),
+[IndexPage](https://indexpage.org/search?q=billiards),
+[Slowden](https://slowden.com/games/tailuge-billiards/),
+[Foundplay](https://foundplay.io/games/billiards)

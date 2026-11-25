@@ -1,0 +1,742 @@
+import { Input } from "../events/input"
+import { GameEvent } from "../events/gameevent"
+import { Session } from "../network/client/session"
+import { StationaryEvent } from "../events/stationaryevent"
+import { Table } from "../model/table"
+import { View } from "../view/view"
+import { Init } from "../controller/init"
+import { AimInputs } from "../view/dom/aiminputs"
+import { Cue } from "../view/cue"
+import { CueHit } from "../view/cuehit"
+import { CueBallSpin } from "../view/cueballspin"
+import { PointerTap } from "../view/pointertap"
+import { Keyboard } from "../events/keyboard"
+import { Sound } from "../view/sound"
+import { Chat } from "../view/chat"
+import { ChatEvent } from "../events/chatevent"
+import { Throttle } from "../events/throttle"
+import { Sliders } from "../view/sliders"
+import { Recorder } from "../events/recorder"
+import { LinkFormatter } from "../view/link-formatter"
+import { Rules } from "../controller/rules/rules"
+import { RuleFactory } from "../controller/rules/rulefactory"
+import { ThreeCushionConfig } from "../utils/threecushionconfig"
+import { Menu } from "../view/menu"
+import { Comment } from "../view/comment"
+import { Hud } from "../view/hud"
+import { NotificationEvent } from "../events/notificationevent"
+import { LobbyIndicator } from "../view/lobbyindicator"
+import { MessageRelay } from "../network/client/messagerelay"
+import { ScoreReporter } from "../network/client/scorereporter"
+import {
+  Notification,
+  NotificationData,
+  NotificationActionHandlers,
+} from "../view/notification"
+import { ScoreEvent } from "../events/scoreevent"
+import { ContainerConfig } from "./containerconfig"
+import { Controller } from "../controller/controller"
+import { ParticleSystem } from "../view/particle-system"
+import { End } from "../controller/end"
+import { Replay } from "../controller/replay"
+import { Aim } from "../controller/aim"
+import { PlaceBall } from "../controller/placeball"
+import { PlayShot } from "../controller/playshot"
+import { WatchAim } from "../controller/watchaim"
+import { WatchShot } from "../controller/watchshot"
+import { BallTray } from "../view/ball-tray"
+import { ExportUtils } from "../utils/export-utils"
+import { ResumeStore } from "../utils/resumestore"
+import { share, shorten } from "../utils/shorten"
+import { RevealTracker } from "../utils/revealtracker"
+import { Rack } from "../utils/rack"
+import { TableGeometry } from "../view/tablegeometry"
+
+type ActivePlayer = 0 | 1 | 2
+
+/**
+ * Model, View, Controller container.
+ */
+export class Container {
+  table: Table
+  particles: ParticleSystem
+  view: View
+  controller: Controller
+  inputQueue: Input[] = []
+  eventQueue: GameEvent[] = []
+  keyboard?: Keyboard
+  cueHit?: CueHit
+  cueBallSpin?: CueBallSpin
+  pointerTap?: PointerTap
+  sound: Sound
+  chat: Chat
+  sliders: Sliders
+  recorder: Recorder
+  linkFormatter: LinkFormatter
+  ballTray: BallTray
+  id: string
+  isSinglePlayer: boolean = true
+  rules: Rules
+  menu: Menu
+  comment: Comment
+  hud: Hud
+  notification: Notification
+  lobbyIndicator: LobbyIndicator
+  replayMode: boolean = false
+  fastForwardActive: boolean = false
+  examMode: boolean = false
+  freeAim: boolean = false
+  readonly collaborationMode: boolean
+  relay: MessageRelay | null = null
+  scoreReporter: ScoreReporter | null = null
+  frame: (timestamp: number) => void
+  /** Multiplier applied to real elapsed time before it's converted to physics
+   * steps in `advance()`. 1 everywhere except the shot-analysis view, which
+   * sets this higher so shot playback feels snappier without changing the
+   * fixed physics step (`this.step`) and therefore without affecting
+   * simulation accuracy. */
+  timeScale = 1
+
+  private hudScores = {
+    p1: 0,
+    p2: 0,
+  }
+  private hudActivePlayer: ActivePlayer = 0
+  private wasReplay: boolean = false
+  private revealTracker: RevealTracker | null = null
+  private saguStartAnnounced = false
+
+  lastShotInit?: string
+  lastShotData?: string
+
+  last = performance.now()
+  readonly step = 0.001953125 * 1
+
+  broadcast: (event: GameEvent) => void = () => {}
+  log: (text: string) => void
+
+  constructor(config: ContainerConfig) {
+    const {
+      element,
+      log,
+      assets,
+      ruletype,
+      keyboard,
+      id,
+      relay = null,
+      scoreReporter = null,
+      replayMode = false,
+      isSinglePlayer = true,
+      portraitMode,
+      freeAim = false,
+      collaborationMode = false,
+    } = config
+    this.log = log
+    this.replayMode = replayMode
+    this.examMode = config.examMode ?? false
+    this.isSinglePlayer = isSinglePlayer
+    this.freeAim = freeAim
+    this.collaborationMode = collaborationMode
+    this.rules = RuleFactory.create(ruletype, this)
+    this.table = this.rules.table()
+    this.view = new View(element, this.table, assets, portraitMode)
+    // Presets are free in every solo mode; only a networked two-player game
+    // gates them behind the collaboration flag.
+    const isTwoPlayer =
+      !this.isSinglePlayer &&
+      !this.replayMode &&
+      !Session.isBotMode() &&
+      !Session.isSpectator()
+    this.view.presetsEnabled = !isTwoPlayer || this.collaborationMode
+    if (this.rules.rulename === "reveal" && this.view.reveal) {
+      this.revealTracker = new RevealTracker(
+        this.view.reveal,
+        Rack.revealRedsToPlay()
+      )
+    }
+    this.table.cue.aimInputs = new AimInputs(this)
+    if (keyboard) {
+      this.keyboard = keyboard
+      keyboard.mousetouchGuard = () =>
+        this.cueHit?.active || this.cueBallSpin?.active || false
+      keyboard.onKeyDown = (code) => {
+        if (code === "KeyT") {
+          this.view.cyclePreset()
+        }
+      }
+    }
+    this.sound = assets.sound
+    this.chat = new Chat(this.sendChat)
+    this.sliders = new Sliders()
+    this.linkFormatter = new LinkFormatter(this)
+    this.ballTray = new BallTray(this)
+    this.recorder = new Recorder(this, this.linkFormatter)
+    this.id = id ?? ""
+    this.menu = new Menu(this)
+    this.comment = new Comment(this)
+    this.table.addToScene(this.view.scene)
+    this.view.onLineDrawn = (line) => {
+      this.sendEvent(new ChatEvent(this.id, "", line))
+    }
+    const tableSize = parseFloat(
+      new URLSearchParams(globalThis.location?.search ?? "").get("tableSize") ||
+        "10"
+    )
+    this.particles = new ParticleSystem({ tableSize, ruleType: ruletype })
+    this.hud = new Hud()
+    this.notification = new Notification()
+    this.notification.shareHandler = () => this.shareReplayLink()
+    this.relay = relay
+    this.scoreReporter = scoreReporter
+    this.lobbyIndicator = new LobbyIndicator(
+      Session.getInstance().botMode,
+      this.replayMode,
+      this.rules,
+      (msg) => this.chat.showMessage(msg),
+      config.messagingUrl,
+      () => this.controller instanceof End
+    )
+    if (this.freeAim) {
+      // "freeaim=true": hide the aim helper (no shot preview line) and apply
+      // the "7" aim camera preset; the A toggle is disabled so it stays off.
+      Cue.helperEnabled = false
+      this.table.cue.showHelper(false)
+      this.table.cue.aimInputs?.showOverlap()
+      this.view.camera.setAimPreset()
+    }
+    if (this.replayMode || Session.isSpectator()) {
+      // Replay and spectate start chromeless; the L key (or menu button) can still toggle.
+      document.body.classList.add("chromeless")
+      Session.getInstance().lod = 4
+    }
+    this.updateController(new Init(this))
+    //  this.updateController(new End(this))
+  }
+
+  init() {
+    if (location.port !== "8081" && this.lobbyIndicator) {
+      this.lobbyIndicator.init()
+    }
+  }
+
+  sendChat = (msg) => {
+    this.sendEvent(new ChatEvent(this.id, msg))
+  }
+
+  throttle = new Throttle(250, (event) => {
+    this.broadcast(event)
+  })
+
+  sendEvent(event) {
+    this.recorder.record(event)
+    this.throttle.send(event)
+  }
+
+  private myHudSlot(): 1 | 2 {
+    return Session.getInstance().playerIndex === 1 ? 2 : 1
+  }
+
+  private opponentHudSlot(): 1 | 2 {
+    return this.myHudSlot() === 1 ? 2 : 1
+  }
+
+  inferActivePlayer(controller: Controller = this.controller): ActivePlayer {
+    if (
+      controller instanceof Aim ||
+      controller instanceof PlaceBall ||
+      controller instanceof PlayShot
+    ) {
+      return this.myHudSlot()
+    }
+    if (controller instanceof WatchAim || controller instanceof WatchShot) {
+      return this.opponentHudSlot()
+    }
+    return 0
+  }
+
+  setHudActivePlayer(active: ActivePlayer) {
+    this.hudActivePlayer = active
+    this.hud.setActivePlayer(active)
+  }
+
+  /** Shows MY cue (p1) while I'm aiming/placing/shooting and the opponent's
+   * cue (p2) while I'm watching them — driven directly by the controller
+   * type, with no playerIndex/HUD-slot indirection. p1 is always my cue and
+   * p2 is always the opponent's. Non-turn controllers (Init/End) leave the
+   * cue as-is. */
+  private setActiveCue(controller: Controller) {
+    const cue = this.table.cue
+    if (!cue?.p1) return
+    const mine =
+      controller instanceof Aim ||
+      controller instanceof PlaceBall ||
+      controller instanceof PlayShot
+    const theirs =
+      controller instanceof WatchAim || controller instanceof WatchShot
+    if (mine) {
+      cue.p1.visible = true
+      cue.p2.visible = false
+    } else if (theirs) {
+      cue.p1.visible = false
+      cue.p2.visible = true
+    }
+  }
+
+  updateScoreHud(
+    p1: number,
+    p2: number,
+    b: number,
+    active?: ActivePlayer,
+    announce = true
+  ) {
+    const session = Session.getInstance()
+    const previousBreak = session.currentBreak
+    const previousMyScore =
+      this.myHudSlot() === 1 ? this.hudScores.p1 : this.hudScores.p2
+    session.updateScoresFromNetwork(p1, p2, b)
+    if (announce) {
+      this.announceScoreChange(previousBreak, previousMyScore)
+    }
+    this.updateReveal(session)
+    const orderedScores = session.orderedScoresForHud()
+    this.hudScores = orderedScores
+    const orderedNames = session.orderedNamesForHud()
+
+    const targets = this.applyHandicapTargets(session, orderedNames)
+    this.applyEightballLabel(session, orderedNames)
+
+    const hideScore = this.rules.hideScoreHud?.() ?? false
+    const isSagu = this.rules.rulename === "sagu"
+    const p1Star = isSagu && orderedScores.p1 === targets.p1 - 1
+    const p2Star = isSagu && orderedScores.p2 === targets.p2 - 1
+
+    this.hud.updateScores(
+      orderedScores.p1,
+      orderedScores.p2,
+      orderedNames.p1Name,
+      orderedNames.p2Name,
+      hideScore ? 0 : b,
+      hideScore,
+      p1Star,
+      p2Star
+    )
+    this.setHudActivePlayer(active ?? this.inferActivePlayer())
+  }
+
+  /**
+   * Speaks sagu's running break and its raceTo-1 warning from the one score
+   * funnel that both the shooter and the watching device use. The previous
+   * values come from the HUD snapshot because the rules have already synced
+   * this shot's score into the Session by the time the funnel runs.
+   */
+  private announceScoreChange(
+    previousBreak: number,
+    previousMyScore: number
+  ): void {
+    if (this.rules.rulename !== "sagu" || Session.isSpectator()) {
+      return
+    }
+    const session = Session.getInstance()
+    if (session.currentBreak > previousBreak && session.currentBreak > 0) {
+      this.sound.speak([`${session.currentBreak}`])
+    }
+    // Replays speak the recorded break scores only; their start, race warning
+    // and foul lines are not part of the footage.
+    if (this.replayMode) {
+      return
+    }
+    const target = session.getRaceTargetForPlayer(session.clientId)
+    if (
+      target > 1 &&
+      previousMyScore !== target - 1 &&
+      session.myScore() === target - 1
+    ) {
+      this.sound.speak(["three_cushion"])
+    }
+  }
+
+  /**
+   * Says the game-start line once per game, at the first Aim/WatchAim
+   * transition on this device. That covers solo (which never receives a
+   * BeginEvent) and both two-player clients. Scores must be 0-0, so a resumed
+   * game with points does not announce; a refresh at 0-0 may say it again.
+   */
+  private announceSaguStart(controller: Controller): void {
+    const session = Session.getInstance()
+    if (
+      this.saguStartAnnounced ||
+      this.rules.rulename !== "sagu" ||
+      this.replayMode ||
+      Session.isSpectator() ||
+      session.myScore() !== 0 ||
+      session.opponentScore() !== 0 ||
+      !(controller instanceof Aim || controller instanceof WatchAim)
+    ) {
+      return
+    }
+    this.saguStartAnnounced = true
+    this.sound.speak(["start"])
+  }
+
+  /**
+   * Re-initialise the RevealTracker total from a short-serialised init array.
+   * In replay the init state may represent a mid-game snapshot where some balls
+   * have already been potted, so the total must reflect the number of pottable
+   * balls actually present rather than the full rack size.
+   *
+   * Ball 0 is always the cue ball and is excluded. Balls whose stored position
+   * is outside the table play area (|x| > tableX or |y| > tableY) are already
+   * in a pocket and are also excluded.
+   */
+  updateRevealTotal(init: number[]): void {
+    if (!this.revealTracker) {
+      return
+    }
+    const { tableX, tableY } = TableGeometry
+    // init is [x0,y0, x1,y1, ...]; skip index 0 (cue ball = pair 0)
+    let count = 0
+    for (let i = 1; i < init.length / 2; i++) {
+      const x = init[i * 2]
+      const y = init[i * 2 + 1]
+      if (Math.abs(x) <= tableX && Math.abs(y) <= tableY) {
+        count++
+      }
+    }
+    if (count > 0) {
+      this.revealTracker.resetTotal(count)
+    }
+  }
+
+  /**
+   * Advances the ?image= cloth reveal for eightball from the score funnel, so
+   * live play, replay and resume stay consistent without the rules reaching
+   * into the view: the cloth fills per ball up to the 8-ball (score / 8). The
+   * solo reveal ruletype is driven instead by RevealTracker from the live
+   * outcome stream (see advance). `reveal` is null without ?image=, ignores
+   * regressions, and replays levels requested before the image loads.
+   */
+  private updateReveal(session: Session): void {
+    if (this.rules.rulename !== "eightball") {
+      return
+    }
+    this.view.reveal?.reveal(session.myScore() / 8)
+  }
+
+  private applyHandicapTargets(
+    session: Session,
+    orderedNames: { p1Name?: string; p2Name?: string }
+  ): { p1: number; p2: number } {
+    const isHandicapRule =
+      this.rules.rulename === "sagu" || this.rules.rulename === "threecushion"
+    const hasHandicaps =
+      isHandicapRule && Object.keys(session.getHandicaps()).length > 0
+    if (!hasHandicaps) {
+      return { p1: ThreeCushionConfig.raceTo, p2: ThreeCushionConfig.raceTo }
+    }
+    const opponentClientId = session.opponentClientId ?? "opponent"
+    const p1ClientId =
+      session.playerIndex === 0 ? session.clientId : opponentClientId
+    const p2ClientId =
+      session.playerIndex === 0 ? opponentClientId : session.clientId
+    const p1 = session.getRaceTargetForPlayer(p1ClientId)
+    const p2 = session.getRaceTargetForPlayer(p2ClientId)
+    if (orderedNames.p1Name) {
+      orderedNames.p1Name = `${orderedNames.p1Name}(${p1})`
+    }
+    if (orderedNames.p2Name) {
+      orderedNames.p2Name = `${orderedNames.p2Name}(${p2})`
+    }
+    return { p1, p2 }
+  }
+
+  private applyEightballLabel(
+    session: Session,
+    orderedNames: { p1Name?: string; p2Name?: string }
+  ): void {
+    if (this.rules.rulename !== "eightball" || session.p1type === 0) {
+      return
+    }
+    const typeLabel = session.p1type === 1 ? "solids" : "stripes"
+    const mySlot = session.playerIndex === 0 ? "p1Name" : "p2Name"
+    if (orderedNames[mySlot]) {
+      orderedNames[mySlot] = `${orderedNames[mySlot]}(${typeLabel})`
+    }
+  }
+
+  sendScoreUpdate(
+    p1: number,
+    p2: number,
+    b: number,
+    active?: ActivePlayer,
+    nextControllerName?: string
+  ) {
+    const activePlayer = active ?? this.inferActivePlayer()
+    if (nextControllerName && !this.isSinglePlayer) {
+      this.saveResumeEntry(nextControllerName, p1, p2, b, activePlayer)
+    }
+    const changed =
+      this.hudScores.p1 !== p1 ||
+      this.hudScores.p2 !== p2 ||
+      Session.getInstance().currentBreak !== b ||
+      this.hudActivePlayer !== activePlayer
+    this.updateScoreHud(p1, p2, b, activePlayer)
+    if (changed) {
+      this.sendEvent(new ScoreEvent(p1, p2, b, activePlayer))
+    }
+  }
+
+  /** Persist a turn-boundary snapshot for post-refresh resume. Only called
+   * in networked two-player games (not single player, bot, replay or
+   * spectator). Unconditional: a turn can settle without the score digits
+   * changing, so this must not be gated on the `changed` check. */
+  savePendingHit() {
+    if (this.replayMode || Session.isSpectator() || Session.isBotMode()) {
+      return
+    }
+    const session = Session.getInstance()
+    const entry = ResumeStore.load(session.tableId)
+    if (!entry) {
+      return
+    }
+    const aim = this.table.cue.aim
+    ResumeStore.save({
+      ...entry,
+      pendingHit: {
+        cueBallId: this.table.balls.indexOf(this.table.cueball),
+        angle: aim.angle,
+        power: aim.power,
+        offset: { x: aim.offset.x, y: aim.offset.y, z: aim.offset.z },
+        elevation: aim.elevation,
+      },
+    })
+  }
+
+  private saveResumeEntry(
+    controller: string,
+    p1: number,
+    p2: number,
+    b: number,
+    active: ActivePlayer
+  ) {
+    if (this.replayMode || Session.isSpectator() || Session.isBotMode()) {
+      return
+    }
+    const session = Session.getInstance()
+    ResumeStore.save({
+      tableId: session.tableId,
+      controller,
+      tablejson: this.table.serialise(),
+      score: { p1, p2, b, active },
+      p1type: session.p1type,
+    })
+  }
+
+  notify(data: NotificationData | string, duration?: number) {
+    this.announceNotification(data)
+    this.notification.show(data, duration)
+    this.sendEvent(new NotificationEvent(data, duration))
+  }
+
+  /** Plays the sagu foul line for a Foul banner shown on this device. */
+  announceNotification(data: NotificationData | string): void {
+    if (
+      this.rules.rulename !== "sagu" ||
+      this.replayMode ||
+      Session.isSpectator() ||
+      typeof data === "string" ||
+      data.type !== "Foul"
+    ) {
+      return
+    }
+    this.sound.speak(["foul"])
+  }
+
+  notifyLocal(
+    data: NotificationData | string,
+    duration?: number,
+    actionHandlers?: NotificationActionHandlers
+  ) {
+    this.notification.show(data, duration, actionHandlers)
+  }
+
+  /**
+   * Backs the share button on end-of-game and replay banners. Shares the link
+   * the banner is about: the replay already loaded in replay mode, otherwise a
+   * replay of the whole game recorded so far. Shortened when the shortening
+   * service answers, and surfaced in chat (mobile browsers hand off to the OS
+   * share sheet) exactly like the Replay menu button. The posted link is the
+   * one message that has to stay clickable while the banner is up, so the chat
+   * is marked `is-link` (see chat.css) to lift it over the notification
+   * overlay, which spans the top of the chat column while a banner is shown.
+   */
+  shareReplayLink() {
+    const url = this.replayMode
+      ? globalThis.location.href
+      : this.linkFormatter.getReplayUri(this.recorder.wholeGame())
+    shorten(url, (shortUrl) => {
+      this.chat.showMessage(share(shortUrl))
+      this.chat.chatoutput?.parentElement?.classList.add("is-link")
+    })
+  }
+
+  advance(elapsed) {
+    this.frame?.(elapsed)
+
+    const steps = Math.floor((elapsed * this.timeScale) / this.step)
+    const computedElapsed = steps * this.step
+    const stateBefore = this.table.allStationary()
+    for (let i = 0; i < steps; i++) {
+      this.table.advance(this.step)
+    }
+    this.table.updateBallMesh(computedElapsed)
+    this.view.update(computedElapsed, this.table.cue.aim)
+    this.table.cue.update(computedElapsed)
+    this.particles.update(computedElapsed)
+    if (!stateBefore && this.table.allStationary()) {
+      this.eventQueue.push(new StationaryEvent())
+      this.table.cue.hittingAnimation = false
+    }
+    this.sound.processOutcomes(this.table.outcome)
+    this.revealTracker?.update(
+      Session.getInstance().myScore(),
+      this.table.outcome,
+      this.table.cueball
+    )
+  }
+
+  processEvents() {
+    if (this.keyboard) {
+      const inputs = this.keyboard.getEvents()
+      inputs.forEach((i) => this.inputQueue.push(i))
+    }
+
+    while (this.inputQueue.length > 0) {
+      this.lastEventTime = this.last
+      const input = this.inputQueue.shift()
+      input && this.updateController(this.controller.handleInput(input))
+    }
+
+    // only process events when stationary
+    if (this.table.allStationary()) {
+      const event = this.eventQueue.shift()
+      if (event) {
+        this.lastEventTime = performance.now()
+        this.recorder.record(event)
+        this.updateController(event.applyToController(this.controller))
+      }
+    }
+  }
+
+  lastEventTime = performance.now()
+
+  animate(timestamp): void {
+    let elapsed = (timestamp - this.last) / 1000
+    if (this.fastForwardActive) {
+      elapsed *= 8
+    }
+    this.advance(elapsed)
+    this.last = timestamp
+    this.processEvents()
+    const needsRender =
+      timestamp < this.lastEventTime + 60000 ||
+      !this.table.allStationary() ||
+      this.view.sizeChanged()
+    if (needsRender) {
+      this.view.render()
+    }
+    requestAnimationFrame((t) => {
+      this.animate(t)
+    })
+  }
+
+  updateLastShot() {
+    const snapshot = ExportUtils.captureSnapshot(this.table)
+    this.lastShotInit = snapshot.init
+    this.lastShotData = snapshot.shot
+  }
+
+  updateController(controller: Controller) {
+    this.wasReplay = this.wasReplay || controller instanceof Replay
+    if (controller !== this.controller) {
+      // a     const playerName = Session.getInstance().playername
+      // b     this.log(`${playerName}: Transition to ${controller.name}`)
+      this.controller = controller
+      this.announceSaguStart(controller)
+      this.setActiveCue(controller)
+      const active = this.inferActivePlayer(controller)
+      if (
+        active !== 0 ||
+        controller instanceof Init ||
+        controller instanceof End
+      ) {
+        this.setHudActivePlayer(active)
+      }
+      this.menu?.setShareVisible(
+        controller instanceof Replay ||
+          (this.wasReplay && controller instanceof End)
+      )
+      this.menu?.setDiagramVisible(
+        controller instanceof Replay ||
+          (this.wasReplay && controller instanceof End)
+      )
+      this.menu?.setAnalysisVisible(
+        (controller instanceof Replay ||
+          (this.wasReplay && controller instanceof End)) &&
+          this.rules.rulename === "threecushion"
+      )
+      const canFastForward =
+        controller instanceof Replay || Session.isSpectator()
+      this.menu?.setFfwdVisible(canFastForward)
+      if (!canFastForward) {
+        this.fastForwardActive = false
+      }
+      const isTwoPlayer =
+        !this.isSinglePlayer &&
+        !this.replayMode &&
+        !Session.isBotMode() &&
+        !Session.isSpectator()
+      const showConcede = !this.replayMode && !Session.isSpectator()
+      this.menu?.setConcedeVisible(showConcede)
+      this.comment?.setVisible(isTwoPlayer)
+
+      this.controller.onFirst()
+      this.updateCueHit(controller)
+      this.updatePointerTap(controller)
+    }
+  }
+
+  /** CueHit and CueBallSpin are armed only while Aim is the active controller:
+   * enable them on entry and disable them on every other transition. Disabling
+   * defers teardown until the pointer is released if a press is still in flight,
+   * so trailing drags stay suppressed. */
+  private updateCueHit(controller: Controller) {
+    if (controller instanceof Aim) {
+      if (!this.cueHit) {
+        this.cueHit = new CueHit(this)
+      }
+      this.cueHit.enable()
+      if (!this.cueBallSpin) {
+        this.cueBallSpin = new CueBallSpin(this)
+        this.cueHit.spin = this.cueBallSpin
+      }
+      this.cueBallSpin.enable()
+    } else {
+      this.cueHit?.disable()
+      this.cueBallSpin?.disable()
+    }
+  }
+
+  /** PointerTap (trackpad click-to-aim) follows the same arming pattern as
+   * CueHit: enabled only while Aim or PlaceBall is the active controller
+   * (hover deltas drive aim rotation / ball placement respectively). */
+  private updatePointerTap(controller: Controller) {
+    if (controller instanceof Aim || controller instanceof PlaceBall) {
+      if (!this.pointerTap) {
+        this.pointerTap = new PointerTap(this)
+      }
+      this.pointerTap.enable()
+    } else {
+      this.pointerTap?.disable()
+    }
+  }
+}

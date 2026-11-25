@@ -74,11 +74,13 @@ class Settings:
     # 未登记过的代号会被 i18n.normalize 回落到 zh_CN。
     language: str = "zh_CN"
     # 内置音乐（见 core/music）：音量 / 悬浮窗是否显示 / 上次选中的曲目 /
-    # 单曲循环。悬浮窗隐藏时音乐照常播放，下次启动按这个开关恢复显示。
+    # 播放模式（0 顺序、1 单曲循环、2 随机循环）。悬浮窗隐藏时音乐照常播放。
+    # music_loop 是 0.4.10 早期版本的单曲循环开关，保留用于读取旧配置。
     music_volume: float = 0.65
     music_visible: bool = True
     music_track: str = ""
     music_loop: bool = False
+    music_mode: int = 0
     data: dict = field(default_factory=dict)
 
     @classmethod
@@ -94,6 +96,14 @@ class Settings:
             volume = max(0.0, min(1.0, float(raw.get("music_volume", 0.65))))
         except (TypeError, ValueError):
             volume = 0.65
+        # 旧配置只有 music_loop：为 True 时映射到「单曲循环」
+        if "music_mode" in raw:
+            try:
+                mode = max(0, min(2, int(raw["music_mode"])))
+            except (TypeError, ValueError):
+                mode = 0
+        else:
+            mode = 1 if bool(raw.get("music_loop", False)) else 0
         return cls(
             theme=raw.get("theme", "light"),
             show_shortcut_hint=raw.get("show_shortcut_hint", True),
@@ -105,6 +115,7 @@ class Settings:
             music_visible=bool(raw.get("music_visible", True)),
             music_track=raw.get("music_track", "") or "",
             music_loop=bool(raw.get("music_loop", False)),
+            music_mode=mode,
             data=raw.get("data", {}) or {},
         )
 

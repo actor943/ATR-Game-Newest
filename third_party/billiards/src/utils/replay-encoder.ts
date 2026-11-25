@@ -1,0 +1,46 @@
+import { ReplayCodec } from "./replay-codec"
+
+export class ReplayEncoder {
+  static fullyEncodeURI(uri: string): string {
+    return encodeURIComponent(uri)
+      .replace(/\(/g, "%28")
+      .replace(/\)/g, "%29")
+      .replace(/!/g, "%21")
+      .replace(/\*/g, "%2A")
+  }
+
+  static crush(data: string): string {
+    return ReplayCodec.encode(data)
+  }
+
+  static createState(
+    init: any,
+    events: any[],
+    start: number = 0,
+    score: number = 0,
+    wholeGame: boolean = false,
+    players?: { player1: string; player2: string },
+    tableSize?: number,
+    image?: string
+  ) {
+    const state: any = {
+      init: init,
+      shots: events,
+      start: start,
+      now: Date.now(),
+      score: score,
+      wholeGame: wholeGame,
+      v: 1,
+    }
+    if (players) {
+      state.players = players
+    }
+    if (tableSize !== undefined && tableSize !== 10) {
+      state.tableSize = tableSize
+    }
+    if (image) {
+      state.image = image
+    }
+    return state
+  }
+}

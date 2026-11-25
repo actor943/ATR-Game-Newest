@@ -1,0 +1,471 @@
+import { TableGeometry } from "../view/tablegeometry"
+import { Table } from "../model/table"
+import { upCross, unitAtAngle, norm, roundVec } from "../utils/three-utils"
+import { atan2, sin } from "../utils/utils"
+import { AimEvent } from "../events/aimevent"
+import { AimInputs } from "./dom/aiminputs"
+import { Ball, State } from "../model/ball"
+import { cueStrike } from "../model/physics/physics"
+import { CueMesh, CueMeshes, CueParams } from "./cuemesh"
+import { Group, MathUtils, Mesh, Vector3, Object3D } from "three"
+import { maxPower, offCenterLimit, R } from "../model/physics/constants"
+import { cueIntersectsAnything } from "../utils/cueintersect"
+import { id } from "../utils/dom"
+
+export class Cue {
+  mesh: Object3D
+  tiltMesh: Object3D
+  cueBody: Object3D
+  helperMesh: Mesh
+  placerMesh: Object3D
+  shadowMesh: Mesh
+  /** Scene-mounted group parenting the two per-player mesh sets and the
+   * shared helper/placer/shadow, so the whole cue can be shown/hidden as one
+   * unit. Carries the aim transforms (position + rotation.z). */
+  root: Group
+  /** MY cue body group (built from my `customParams`); shown while I'm
+   * aiming/placing/shooting. */
+  p1: Group
+  /** The opponent's cue body group (built from their `opponentParams`);
+   * shown while I'm watching them aim/shoot. */
+  p2: Group
+  /** The two created cue bodies (my cue first, then the opponent's). The
+   * child-local aim-derived writes (tilt, hit-animation stroke, mesh
+   * visibility) loop over both; the shared root carries the aim transforms. */
+  cues: CueMeshes[] = []
+  t = 0
+  /** When non-null, the aim swing uses this fixed phase instead of the
+   * free-running `t` (set by the CueHit drag gesture; null resumes idle). */
+  dragT: number | null = null
+  hittingAnimation = false
+  aimInputs: AimInputs
+  aim: AimEvent = new AimEvent()
+  /** Analysis-mode-only limits (set by AnalysisPanel) clamping how far the
+   * table view can push aim angle / elevation, matching what the analysis
+   * panel itself displays as the "aim shift" / "elevation" tolerance window.
+   * null outside analysis mode (no restriction). */
+  aimLimits: {
+    angleMin: number
+    angleMax: number
+    elevationMin: number
+    elevationMax: number
+  } | null = null
+
+  length = TableGeometry.tableX * 1
+
+  private hitStatsElement: HTMLElement | null = id("hitStats")
+  private readonly tempVec = new Vector3()
+  private readonly tempVec2 = new Vector3()
+  private readonly tempVec3 = new Vector3()
+  hitAnimationWeight: number = 0
+  /** Non-zero (cue placed at maxHitLift * R) while the struck ball
+   * runs back into the cue tip. Visual only: aim.elevation, the tilt slider,
+   * the networked AimEvent and cueStrike() are all untouched, so the shot that
+   * has already been struck is unaffected. Hard-zeroed whenever the animation
+   * is not running, so it is inert outside a hit animation. */
+  hitLift = 0
+  /** Cue body height (table +z) when not lifted, used by the shadow. */
+  private restZ = 0
+  /** The ball struck by the current shot (the cue ball), captured in `hit()`
+   * so the returning-ball check has something to read. */
+  private struckBall?: Ball
+
+  constructor(opts?: CueParams, opponentOpts?: CueParams) {
+    if (typeof document !== "undefined") {
+      const cue = CueMesh.createCue(
+        (R * 0.07) / 0.5,
+        (R * 0.23) / 0.5,
+        this.length,
+        opts
+      )
+      const opponentCue = CueMesh.createCue(
+        (R * 0.07) / 0.5,
+        (R * 0.23) / 0.5,
+        this.length,
+        opponentOpts
+      )
+      this.cues.push(cue, opponentCue)
+      this.mesh = cue.mesh
+      this.tiltMesh = cue.tiltMesh
+      this.cueBody = cue.cueBody
+      this.p1 = new Group()
+      this.p2 = new Group()
+      this.p1.add(cue.mesh)
+      this.p2.add(opponentCue.mesh)
+      this.helperMesh = CueMesh.createHelper()
+      this.placerMesh = CueMesh.createPlacer()
+      this.shadowMesh = CueMesh.createShadow(this.length)
+      this.root = new Group()
+      this.root.add(
+        this.p1,
+        this.p2,
+        this.helperMesh,
+        this.placerMesh,
+        this.shadowMesh
+      )
+      // My cue shows from startup; the opponent's shows only while watching.
+      this.p2.visible = false
+    }
+  }
+
+  rotateAim(angle, table: Table) {
+    if (!this.aimInputs || this.aimInputs.isDisabled()) {
+      return
+    }
+    this.aim.angle = Math.fround(this.aim.angle + angle)
+    if (this.aimLimits) {
+      this.aim.angle = Math.min(
+        this.aimLimits.angleMax,
+        Math.max(this.aimLimits.angleMin, this.aim.angle)
+      )
+    }
+    if (this.root) this.root.rotation.z = this.aim.angle
+    this.aimInputs.showOverlap()
+    this.avoidCueTouchingOtherBall(table)
+  }
+
+  adjustPower(delta) {
+    if (!this.aimInputs || this.aimInputs.isDisabled()) {
+      return
+    }
+    this.aim.power = Math.fround(Math.min(maxPower, this.aim.power + delta))
+    this.updateAimInput()
+  }
+
+  setPower(value: number) {
+    if (!this.aimInputs || this.aimInputs.isDisabled()) {
+      return
+    }
+    this.aim.power = Math.fround(value * maxPower)
+    this.updateAimInput()
+  }
+
+  hit(ball: Ball) {
+    const { angle, power, offset, elevation } = this.aim
+    this.t = 0
+    this.hitLift = 0
+    this.struckBall = ball
+    this.hittingAnimation = true
+    ball.state = State.Sliding
+    const strike = cueStrike(angle, power, offset, elevation)
+    ball.vel.copy(strike.vel)
+    ball.rvel.copy(strike.rvel)
+    if (this.hitStatsElement) {
+      this.hitStatsElement.innerText =
+        `Angle: ${angle.toFixed(2)} Power: ${power} ` +
+        `Offset: ${offset.x.toFixed(2)}, ${offset.y.toFixed(2)} Elevation: ${elevation.toFixed(0)} ` +
+        `Vel: ${ball.vel.length().toFixed(2)}m/s rVel: ${ball.rvel.length().toFixed(2)}rad/s`
+    }
+  }
+
+  /** Point the cue at the centre of `ball`, then move it clear of anything it
+   * would otherwise pass through, when a table is supplied. The clearance
+   * must not depend on the aim controls being enabled: this runs on turn
+   * transitions (e.g. the gap between our shot and the opponent's update)
+   * while they are still disabled. */
+  aimAtNext(cueball, ball, table?: Table) {
+    if (ball) {
+      const lineTo = norm(this.tempVec.copy(ball.pos).sub(cueball.pos))
+      this.aim.angle = atan2(lineTo.y, lineTo.x)
+    }
+    if (table) {
+      this.avoidCueTouchingOtherBall(table)
+    }
+  }
+
+  adjustSpin(delta: Vector3, table: Table) {
+    if (!this.aimInputs || this.aimInputs.isDisabled()) {
+      return
+    }
+    const newOffset = this.tempVec3.copy(this.aim.offset).add(delta)
+    this.setSpin(newOffset, table)
+  }
+
+  setSpin(offset: Vector3, table: Table) {
+    if (!this.aimInputs || this.aimInputs.isDisabled()) {
+      return
+    }
+    this.t = 0
+    if (offset.length() > offCenterLimit) {
+      offset.normalize().multiplyScalar(offCenterLimit)
+    }
+    this.aim.offset.copy(roundVec(offset))
+    this.avoidCueTouchingOtherBall(table)
+    this.updateAimInput()
+  }
+
+  setElevation(value: number) {
+    if (!this.aimInputs || this.aimInputs.isDisabled()) {
+      return
+    }
+    let elevation = value
+    if (this.aimLimits) {
+      elevation = Math.min(
+        this.aimLimits.elevationMax,
+        Math.max(this.aimLimits.elevationMin, elevation)
+      )
+    }
+    this.aim.elevation = elevation
+    this.updateAimInput()
+  }
+
+  avoidCueTouchingOtherBall(table: Table) {
+    let n = 0
+    while (n++ < 20 && this.intersectsAnything(table)) {
+      this.aim.offset.y += 0.1
+      if (this.aim.offset.length() > offCenterLimit) {
+        this.aim.offset.normalize().multiplyScalar(offCenterLimit)
+      }
+    }
+
+    // Once the offset is clamped at offCenterLimit, raise the elevation
+    // instead (0.01 at a time, up to a maximum of 0.05).
+    let elevationSteps = 0
+    while (elevationSteps < 5 && this.intersectsAnything(table)) {
+      this.raiseElevation(0.01)
+      elevationSteps++
+    }
+
+    if (n > 1 || elevationSteps > 0) {
+      this.updateAimInput()
+    }
+  }
+
+  /** Raise the cue elevation for the automatic clearance pass. Unlike the
+   * user-facing setElevation it is not gated on the aim controls being
+   * enabled, because aimAtNext clears the cue while they are still disabled. */
+  private raiseElevation(delta: number) {
+    let elevation = this.aim.elevation + delta
+    if (this.aimLimits) {
+      elevation = Math.min(
+        this.aimLimits.elevationMax,
+        Math.max(this.aimLimits.elevationMin, elevation)
+      )
+    }
+    this.aim.elevation = elevation
+  }
+
+  updateAimInput() {
+    this.aimInputs?.updateVisualState(this.aim.offset.x, this.aim.offset.y)
+    this.aimInputs?.updatePowerSlider(this.aim.power / maxPower)
+    this.aimInputs?.updateTiltSlider?.(this.aim.elevation)
+    this.aimInputs?.showOverlap()
+  }
+
+  private updateCueRotation() {
+    if (this.root) this.root.rotation.z = this.aim.angle
+    const tilt = CueMesh.baseTilt + this.aim.elevation
+    for (const c of this.cues) {
+      c.tiltMesh.rotation.y = tilt
+    }
+  }
+
+  private applyHitAnimation(swing: number) {
+    if (this.hittingAnimation) {
+      this.hitAnimationWeight = 1
+      this.updateHitLift()
+    } else {
+      this.hitAnimationWeight *= 0.97
+      this.hitLift = 0
+    }
+
+    let curveVal = this.hitAnimationCurve(this.t)
+    if (curveVal < 0) {
+      const powerRatio = this.aim.power / maxPower
+      const factor = 0.5 + 0.5 * powerRatio
+      curveVal *= factor
+    }
+    const hitOffset = this.hitAnimationWeight * curveVal * 2 * R
+    const strokeX = (1 - this.hitAnimationWeight) * swing - hitOffset
+    // The stroke is axial only: inside tiltMesh, cueBody.position.x already
+    // runs along the cue, so a local z term would translate the shaft across
+    // itself (dropping it through any ball sitting behind the cue ball).
+    this.restZ = Math.max(-0.5 * R, this.aim.offset.y * R)
+    const z = this.hitLift !== 0 ? Cue.maxHitLift * R : this.restZ
+    for (const c of this.cues) {
+      c.cueBody.position.set(
+        -this.length / 2 - R * 1.1 + strokeX,
+        this.aim.offset.x * R,
+        z
+      )
+      // Visual-only squirt: rotate the cue about its tip by the squirt angle
+      // so the butt deflects while the tip stays on the contact point. The
+      // aim line, camera and physics are untouched (the ball still leaves
+      // along aim.angle; offset only adds spin).
+      const squirt = this.squirtAngle()
+      const tipX = c.cueBody.position.x + this.length / 2
+      const tipY = c.cueBody.position.y
+      // cueBody already has a -90° base rotation from CueMesh.createCue(),
+      // which aligns the generated Y-axis geometry with the table's X axis.
+      c.cueBody.rotation.z = -Math.PI / 2 + squirt
+      c.cueBody.position.x = tipX - (this.length / 2) * Math.cos(squirt)
+      c.cueBody.position.y = tipY - (this.length / 2) * Math.sin(squirt)
+    }
+
+    return strokeX
+  }
+
+  /** Cheap, raycast-free clip guard for the one case that matters: the struck
+   * ball running back into the cue tip. `aim.pos` is the strike point (frozen
+   * for the whole animation), so "coming back" is a distance test against it,
+   * gated on the ball's *velocity* pointing back at it. The direction, not a
+   * distance latch, is what tells a return apart from the strike itself: at
+   * contact the ball is moving away. No iteration, no state. */
+  private updateHitLift() {
+    const ball = this.struckBall
+    if (!ball) return
+    const toStrikeX = this.aim.pos.x - ball.pos.x
+    const toStrikeY = this.aim.pos.y - ball.pos.y
+    const distSq = toStrikeX * toStrikeX + toStrikeY * toStrikeY
+    const returning = ball.vel.x * toStrikeX + ball.vel.y * toStrikeY > 0
+    const lifting =
+      returning && distSq < Cue.hitLiftReturn * R * (Cue.hitLiftReturn * R)
+    // Sticky: a ball that comes back runs on down the length of the cue, so it
+    // is deepest in the way when it is furthest from the strike point. Hold
+    // the lift once raised rather than dropping it as the ball rolls past.
+    if (lifting) {
+      if (this.hitLift === 0) console.log("Raise")
+      this.hitLift = Cue.maxHitLift
+    }
+  }
+
+  private updateCuePosition(pos: Vector3, strokeX: number) {
+    if (this.root) this.root.position.copy(pos)
+
+    // Project local strokeX through tilt onto the horizontal plane for shadow
+    const elevation = this.tiltMesh ? (this.tiltMesh.rotation.y as number) : 0
+
+    const localX = strokeX - R
+    // Use the rest height, not the lifted body height, so the shadow stays
+    // flat on the table at the aim elevation rather than hopping with the cue.
+    const localZ = this.restZ
+    const projectedX =
+      localX * Math.cos(elevation) + localZ * Math.sin(elevation)
+
+    // The root carries the cue-ball position and the aim rotation, so the
+    // shadow only needs a local offset: the old world-space terms (`pos`,
+    // `sideVec`, `unitToBall`) were exactly the root's rotation applied to
+    // this local point, so the world result is identical.
+    if (this.shadowMesh) {
+      // Swing the shadow with the same squirt rotation, keeping its near end
+      // under the cue tip (the shadow plane spans -length-R .. -R locally).
+      const squirt = this.squirtAngle()
+      const tipY =
+        (this.cueBody ? this.cueBody.position.y : 0) +
+        (this.length / 2) * Math.sin(squirt)
+      this.shadowMesh.rotation.z = squirt
+      this.shadowMesh.position.set(
+        projectedX + R * Math.cos(elevation) - R + R * Math.cos(squirt),
+        tipY + R * Math.sin(squirt),
+        -R * 0.99
+      )
+      this.shadowMesh.scale.x = Math.cos(elevation)
+    }
+
+    if (this.placerMesh) {
+      this.placerMesh.rotation.z = this.t
+    }
+  }
+
+  moveTo(pos) {
+    this.aim.pos.copy(pos)
+    this.updateCueRotation()
+    const t = this.dragT ?? this.t
+    // While dragging the amplitude is fixed and amplified (full retraction at
+    // dragT = T_FULL); otherwise the idle swing scales with power as before.
+    const powerScale =
+      this.dragT === null ? this.aim.power / maxPower : Cue.dragPullAmplifier
+    const swing = (sin(t * 1.5 + Math.PI / 2) - 1) * 2 * R * powerScale
+    const strokeX = this.applyHitAnimation(swing)
+    this.updateCuePosition(pos, strokeX)
+  }
+
+  hitAnimationCurve(t: number) {
+    const pts = [
+      { t: 0, v: -2 },
+      { t: 1, v: -1 },
+      { t: 2, v: 1 },
+      { t: 3, v: 2 },
+    ]
+    if (t <= pts[0].t) return pts[0].v
+    if (t >= pts[pts.length - 1].t) return pts[pts.length - 1].v
+    const i = pts.findIndex((p, idx) => t >= p.t && t <= pts[idx + 1]?.t)
+    const p1 = pts[i],
+      p2 = pts[i + 1]
+    const p0 = pts[Math.max(0, i - 1)],
+      p3 = pts[Math.min(pts.length - 1, i + 2)]
+    const lt = (t - p1.t) / (p2.t - p1.t),
+      lt2 = lt * lt,
+      lt3 = lt2 * lt
+    return (
+      p0.v * (-0.5 * lt3 + lt2 - 0.5 * lt) +
+      p1.v * (1.5 * lt3 - 2.5 * lt2 + 1) +
+      p2.v * (-1.5 * lt3 + 2 * lt2 + 0.5 * lt) +
+      p3.v * (0.5 * lt3 - 0.5 * lt2)
+    )
+  }
+
+  update(t) {
+    this.t += t
+    this.moveTo(this.aim.pos)
+  }
+
+  placeBallMode() {
+    for (const c of this.cues) c.mesh.visible = false
+    if (this.shadowMesh) this.shadowMesh.visible = false
+    if (this.placerMesh) this.placerMesh.visible = true
+    this.aim.angle = 0
+  }
+
+  aimMode() {
+    for (const c of this.cues) c.mesh.visible = true
+    if (this.shadowMesh) this.shadowMesh.visible = true
+    if (this.placerMesh) this.placerMesh.visible = false
+  }
+
+  /** Squirt angle (radians) for the current lateral offset: the visual
+   * deflection of the cue, applied to the rendered cue only. `aim.offset.x`
+   * is already normalised (clamped to +-offCenterLimit), so a full sideways
+   * offset yields `maxSquirtAngle` (0.5 degrees). */
+  squirtAngle() {
+    const maxSquirtAngle = MathUtils.degToRad(0.5)
+    return Math.atan(
+      (Math.tan(maxSquirtAngle) * this.aim.offset.x) / offCenterLimit
+    )
+  }
+
+  spinOffset(aim: AimEvent = this.aim) {
+    return upCross(unitAtAngle(aim.angle, this.tempVec2))
+      .multiplyScalar(aim.offset.x * R)
+      .setZ(aim.offset.y * R)
+  }
+
+  intersectsAnything(table: Table, aim: AimEvent = this.aim) {
+    return cueIntersectsAnything(table, aim, this.spinOffset(aim))
+  }
+
+  /** Multiplies the cue retraction while the CueHit drag gesture is active, so
+   * pull-back is more pronounced than the idle power-scaled swing. Tuneable. */
+  static readonly dragPullAmplifier = 2.5
+
+  /** Absolute height of the cue body (table +z, in ball radii) while the
+   * returning ball is over the cue. */
+  static readonly maxHitLift = 1.2
+  /** How close (in ball radii) the struck ball must be to the strike point
+   * while moving back toward it before the cue lifts. */
+  static readonly hitLiftReturn = 1
+
+  static helperEnabled = true
+
+  showHelper(b) {
+    if (this.helperMesh) this.helperMesh.visible = b && Cue.helperEnabled
+  }
+
+  toggleHelper() {
+    Cue.helperEnabled = !Cue.helperEnabled
+    if (this.helperMesh) {
+      this.helperMesh.visible = !this.helperMesh.visible
+    }
+    this.aimInputs?.showOverlap()
+  }
+}

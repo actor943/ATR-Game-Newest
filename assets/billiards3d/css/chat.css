@@ -1,0 +1,211 @@
+/* Chat Overlay */
+.chatarea {
+  position: absolute;
+  top: 44px;
+  right: 10px;
+  max-width: 280px;
+  max-height: 400px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 0;
+  z-index: 900;
+  overflow: hidden;
+}
+
+.chatoutput {
+  max-height: 360px;
+  overflow: hidden auto;
+  padding: 2px;
+  font-size: 16px;
+  color: #eee;
+  text-shadow: 1px 1px 0 black;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.chatoutput a {
+  overflow-wrap: anywhere;
+}
+
+/* Set by shareReplayLink() once the replay link is posted. The end-of-game /
+   replay banner keeps #notificationOverlay (pointer-events: auto, z-index 2000)
+   across the top of the chat column, which would swallow clicks on the link;
+   lifting the chat above it also restores the text selection and cursor that
+   .view3d disables. */
+.chatarea.is-link {
+  z-index: 2500;
+  cursor: auto;
+  user-select: text;
+}
+
+.chatarea.is-link .chatoutput a {
+  cursor: pointer;
+}
+
+.chatoutput::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chatoutput::-webkit-scrollbar-track {
+  background: #222;
+}
+
+.chatoutput::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+.chatoutput::-webkit-scrollbar-thumb:hover {
+  background: #777;
+}
+
+#inputTextDiv {
+  /* Corridor shell: defines the safe zone between aim inputs (left) and
+     menu buttons (right). The inner div is centered within this corridor. */
+  position: absolute;
+  width: auto;
+  inset: auto 78px 4px 148px; /* 3px up from original 1px */ /* tightened to preserve emoji width */ /* button column */
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+#inputTextDiv[open] {
+  display: flex;
+}
+
+#inputTextDivInner {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  max-width: 360px;
+  pointer-events: auto;
+  background: #333;
+  border: 1px solid #555;
+  border-radius: 999px;
+  padding: 2px 3px;
+  box-shadow: none;
+  filter: drop-shadow(0 2px 2px rgb(0 0 0 / 60%));
+}
+
+#chatEmojiList {
+  display: none;
+  flex: 1;
+  min-width: 0;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 0;
+}
+
+@media (width <= 500px) {
+  #chatEmojiList {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+#inputText {
+  /* Fill the available space between the spin column and the buttons */
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  padding: 1px 4px;
+  caret-color: white;
+  color: white;
+  background: transparent;
+  border: none;
+  outline: none;
+
+  /* .view3d sets cursor: none, which would hide the text caret over the input */
+  cursor: text;
+}
+
+#inputSend {
+  background: #2e8b57;
+}
+
+#inputSend:hover {
+  background: #3da066;
+}
+
+#inputTextDiv .chat-emoji {
+  all: unset;
+  display: block;
+  min-width: 0;
+  font-size: 18px;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    transform 0.1s ease;
+}
+
+#inputTextDiv .chat-emoji:hover {
+  background: rgb(255 255 255 / 12%);
+}
+
+#inputTextDiv.emoji-mode #inputText,
+#inputTextDiv.emoji-mode #inputSend {
+  display: none;
+}
+
+#inputTextDiv.emoji-mode #chatEmojiList {
+  display: grid;
+}
+
+#inputTextDiv.emoji-mode .chat-text-mode-icon {
+  display: none;
+}
+
+#inputTextDiv:not(.emoji-mode) .chat-emoji-mode-icon {
+  display: none;
+}
+
+#inputText::placeholder {
+  color: #999;
+}
+
+#inputText::selection {
+  background: #555;
+  color: white;
+}
+
+#inputTextDiv button {
+  font-size: 15px;
+  padding: 2px 4px;
+  min-width: 24px;
+  border: none;
+  border-radius: 999px;
+  color: white;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    transform 0.1s ease;
+}
+
+#inputTextDiv button:active {
+  transform: scale(0.95);
+}
+
+#toggleChatMode {
+  background: #555;
+}
+
+#toggleChatMode:hover {
+  background: #666;
+}
+
+#inputClose {
+  background: #555;
+}
+
+#inputClose:hover {
+  background: #d64545;
+}

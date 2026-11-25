@@ -1,0 +1,169 @@
+import { RealPosition } from "./realposition"
+import { RealDraw } from "./realdraw"
+import { Container } from "../../container/container"
+import { BreakEvent } from "../../events/breakevent"
+import { AbortEvent } from "../../events/abortevent"
+import { BeginEvent } from "../../events/beginevent"
+
+export class RealOverlay {
+  private readonly drawer: RealDraw
+  readonly fileInput: HTMLInputElement = document.getElementById(
+    "fileInput"
+  )! as HTMLInputElement
+  readonly shotIndexDisplay: HTMLSpanElement = document.getElementById(
+    "shotIndexDisplay"
+  )! as HTMLSpanElement
+  readonly shotSelector: HTMLSelectElement = document.getElementById(
+    "shotSelector"
+  )! as HTMLSelectElement
+  readonly replayButton: HTMLButtonElement = document.getElementById(
+    "replay"
+  )! as HTMLButtonElement
+  readonly myIframe = document.getElementById("myIframe")
+
+  allShots: any[] = []
+  currentShotIndex = 0
+  animationTimer = -2.35
+  isPlaying = false
+  lastFrameTime = 0
+  animationStartTime = 0
+  realPosition: RealPosition | null = null
+  elapsedTime = 0
+  readonly container: Container
+
+  constructor(canvas: HTMLCanvasElement, container: any) {
+    this.drawer = new RealDraw(canvas)
+    this.container = container
+    container && (container.frame = this.advance.bind(this))
+    this.start()
+  }
+
+  start() {
+    console.log("real overlay start")
+    this.loadDefaultData()
+    this.addEventListeners()
+  }
+
+  addEventListeners() {
+    this.fileInput.addEventListener("change", (event) =>
+      this.handleFileChange(event)
+    )
+    this.shotSelector.addEventListener("change", () => this.handleShotSelect())
+    this.replayButton.addEventListener("click", () => this.handleReplay())
+  }
+
+  handleFileChange(event: Event) {
+    const file = (event.target as HTMLInputElement).files![0]
+    if (file) {
+      file
+        .text()
+        .then((text) => {
+          const shotsData = JSON.parse(text)
+          this.processShots(shotsData)
+        })
+        .catch((error) => {
+          console.error("Error parsing JSON:", error)
+          alert("Error parsing JSON file.")
+        })
+    }
+  }
+
+  handleShotSelect() {
+    this.currentShotIndex = Number.parseInt(this.shotSelector.value, 10)
+    this.updateDisplay()
+    this.resetAnimation()
+  }
+
+  loadDefaultData() {
+    const filename = "simple_shots.json"
+    fetch(filename)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+        return response.json()
+      })
+      .then((shotsData) => this.processShots(shotsData))
+      .catch((error) => {
+        console.error("Error loading default data from", filename, error)
+      })
+  }
+
+  processShots(shotsData: any[]) {
+    this.allShots = shotsData
+    this.realPosition = new RealPosition(this.allShots)
+    if (this.allShots.length > 0) {
+      this.currentShotIndex = 0
+      this.populateShotSelector()
+      this.updateDisplay()
+      this.resetAnimation()
+    }
+  }
+
+  populateShotSelector() {
+    this.shotSelector.innerHTML = ""
+    this.allShots.forEach((shot, index) => {
+      const option = document.createElement("option")
+      option.value = index.toString()
+      option.text = `Shot ${index + 1} (ID: ${shot.shotID})`
+      this.shotSelector.appendChild(option)
+    })
+    if (this.allShots.length > 0) {
+      this.shotSelector.value = this.currentShotIndex.toString()
+    }
+  }
+
+  updateDisplay() {
+    this.shotIndexDisplay.textContent = `Shot: ${this.currentShotIndex + 1}`
+    if (this.allShots[this.currentShotIndex]) {
+      this.shotSelector.value = this.currentShotIndex.toString()
+    }
+  }
+
+  drawShot(shotData: any, currentTime: number = 0) {
+    if (!this.realPosition) return
+
+    const ballPositions = this.realPosition.getPositionsAtTime(
+      shotData.shotID,
+      currentTime
+    )
+    if (!ballPositions) return
+
+    for (const ballNum in ballPositions) {
+      this.drawer.updateBallPaths(ballNum, ballPositions[ballNum])
+    }
+
+    this.drawer.clear()
+    this.drawer.drawShot(ballPositions)
+  }
+
+  handleReplay() {
+    this.resetAnimation()
+  }
+
+  resetAnimation() {
+    this.isPlaying = false
+    this.animationTimer = -2.3
+    this.drawer.resetCanvas()
+    this.drawShot(this.allShots[this.currentShotIndex], 0)
+    this.resetSimulation(this.allShots[this.currentShotIndex])
+  }
+
+  resetSimulation(shotData: any) {
+    console.log("reset simulation")
+    const state = this.realPosition!.stateFrom(shotData)
+    this.container.table.updateFromShortSerialised(state.init)
+    this.container.eventQueue.push(
+      new AbortEvent(),
+      new BeginEvent(),
+      new BreakEvent(state.init, state.shots)
+    )
+  }
+
+  advance(elapsed: number) {
+    this.elapsedTime += elapsed
+    this.animationTimer += elapsed
+    const currentShot = this.allShots[this.currentShotIndex]
+    this.drawShot(currentShot, this.animationTimer)
+  }
+}

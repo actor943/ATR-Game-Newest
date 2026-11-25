@@ -1,0 +1,210 @@
+import { Controller } from "./controller"
+import { exportGltf } from "../utils/gltf"
+import { ChatEvent } from "../events/chatevent"
+import { NotificationEvent } from "../events/notificationevent"
+import { ScoreEvent } from "../events/scoreevent"
+import { ConcedeEvent } from "../events/concedeevent"
+import { Outcome } from "../model/outcome"
+import { Vector3 } from "three"
+import { Session } from "../network/client/session"
+
+const flipP1type = (t: number) => (t === 1 ? 2 : 1)
+
+const flipX = new URLSearchParams(globalThis.location?.search).has("flip")
+
+export abstract class ControllerBase extends Controller {
+  readonly scale = 0.001
+
+  constructor(container) {
+    super(container)
+    container.table.proximityIndicator.hide()
+  }
+
+  override handleChat(chatevent: ChatEvent): Controller {
+    if (chatevent.message) {
+      this.container.chat.showMessage(chatevent.message)
+    }
+    if (chatevent.line) {
+      this.container.view.addLine(chatevent.line)
+    }
+    return this
+  }
+
+  override handleNotification(event: NotificationEvent): Controller {
+    const data = event.data
+    if (
+      typeof data !== "string" &&
+      data.type === "GameOver" &&
+      !data.highBreaks
+    ) {
+      data.highBreaks = this.container.ballTray
+        .getTopBreaks(3)
+        .map(({ score, hiScoreUri }) => ({ score, url: hiScoreUri }))
+    }
+    this.container.announceNotification(data)
+    this.container.notification.show(data, event.duration)
+    return this
+  }
+
+  override handleScore(event: ScoreEvent): Controller {
+    const session = Session.getInstance()
+    if (
+      event.p1type !== undefined &&
+      event.p1type !== 0 &&
+      session.p1type === 0
+    ) {
+      session.p1type =
+        session.playerIndex === 0 ? event.p1type : flipP1type(event.p1type)
+    }
+    this.container.updateScoreHud(event.p1, event.p2, event.b, event.active)
+
+    const rulename = this.container.rules.rulename
+    if (
+      !Session.isSpectator() &&
+      !this.container.replayMode &&
+      this.name !== "End"
+    ) {
+      if (
+        (rulename === "threecushion" ||
+          rulename === "sagu" ||
+          rulename === "libre") &&
+        this.container.rules.isEndOfGame([])
+      ) {
+        const myTarget = session.getRaceTargetForPlayer(session.clientId)
+        const amIWinner = session.myScore() >= myTarget
+        return this.container.rules.handleGameEnd(amIWinner)
+      }
+      // Snooker ends by clearing the table; the shooter is authoritative for
+      // the final score, so the watcher must conclude from the received
+      // ScoreEvent (synced above) rather than from its own local physics.
+      if (rulename === "snooker" && this.container.rules.isEndOfGame([])) {
+        return this.container.rules.handleGameEnd(false)
+      }
+    }
+
+    return this
+  }
+
+  override handleConcede(_: ConcedeEvent): Controller {
+    return this.container.rules.handleGameEnd(true, "opponent conceded")
+  }
+
+  hit() {
+    this.container.sound.lastOutcomeTime = -1
+    this.container.table.outcome = [
+      Outcome.hit(
+        this.container.table.cueball,
+        this.container.table.cue.aim.power,
+        0
+      ),
+    ]
+    this.container.table.hit()
+    const camera = this.container.view.camera
+    if (camera.mode !== camera.aimzView) {
+      camera.suggestMode(camera.aimView)
+    }
+    this.container.table.cue.showHelper(false)
+  }
+
+  commonKeyHandler(input) {
+    const cue = this.container.table.cue
+    const delta = input.t * this.scale
+    switch (input.key) {
+      case "ArrowLeft":
+        cue.rotateAim(-delta, this.container.table)
+        return true
+      case "ArrowRight":
+        cue.rotateAim(delta, this.container.table)
+        return true
+      case "ArrowDown":
+        cue.adjustSpin(new Vector3(0, -delta), this.container.table)
+        return true
+      case "ArrowUp":
+        cue.adjustSpin(new Vector3(0, delta), this.container.table)
+        return true
+      case "ShiftArrowLeft":
+        cue.adjustSpin(new Vector3(delta, 0), this.container.table)
+        return true
+      case "ShiftArrowRight":
+        cue.adjustSpin(new Vector3(-delta, 0), this.container.table)
+        return true
+      case "KeyPUp":
+        exportGltf(this.container.view.scene)
+        return true
+      case "KeyAUp":
+        if (!this.container.freeAim) {
+          cue.toggleHelper()
+        }
+        return true
+      case "KeyMUp":
+        if (document.body.classList.contains("chromeless")) {
+          this.container.menu.toggleChromeless()
+        }
+        this.container.table.cue.aimInputs?.toggleTiltControl()
+        return true
+      case "KeyHUp":
+        this.container.menu.toggleHelpOverlay()
+        return true
+      case "movementXUp":
+        cue.rotateAim((flipX ? -delta : delta) * 2, this.container.table)
+        return true
+      case "movementYUp":
+        if (!cue.aimInputs?.isDisabled()) {
+          this.container.view.camera.adjustHeight(delta * 4)
+        }
+        return true
+      case "NumpadSubtract":
+        this.container.view.camera.adjustHeight(delta * 4)
+        return true
+      case "NumpadAdd":
+        this.container.view.camera.adjustHeight(-delta * 4)
+        return true
+      case "KeyOUp":
+        this.container.view.camera.toggleMode()
+        return true
+      case "KeyZ":
+      case "KeyZUp":
+        this.container.view.camera.cycleMode()
+        return true
+      case "KeyD":
+        this.container.view.minimap.keyDown()
+        return true
+      case "KeyDUp":
+        this.container.view.minimap.keyUp()
+        return true
+      case "KeyFUp":
+        this.container.menu.toggleFullscreen()
+        return true
+      case "KeyLUp":
+        this.container.menu.toggleChromeless()
+        this.container.view.camera.setAimPreset()
+        return true
+      case "KeyCUp":
+        this.container.comment.openChat()
+        return true
+      case "Digit1":
+        this.container.view.camera.adjustFov(-delta * 20)
+        return true
+      case "Digit2":
+        this.container.view.camera.adjustFov(delta * 20)
+        return true
+      case "Digit3":
+        this.container.view.camera.adjustDistance(-delta * 4)
+        return true
+      case "Digit4":
+        this.container.view.camera.adjustDistance(delta * 4)
+        return true
+      case "Digit5":
+        this.container.view.camera.adjustLook(-delta * 0.25)
+        return true
+      case "Digit6":
+        this.container.view.camera.adjustLook(delta * 0.25)
+        return true
+      case "Digit7Up":
+        this.container.view.camera.setAimPreset()
+        return true
+      default:
+        return false
+    }
+  }
+}

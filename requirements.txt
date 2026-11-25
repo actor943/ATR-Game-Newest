@@ -31,6 +31,12 @@ flet[all]==1.0.4
 # 内置音乐：官方 flet-audio 扩展，版本必须与 flet 一致；包内 Flutter 插件
 # 会被 flet build 自动注册到 apk / ipa / app / exe（手机端也能播放）。
 flet-audio==1.0.4
+# 3D 台球：手机 / macOS 用官方 WebView 控件内嵌全屏页面（Android / iOS / macOS 支持）。
+flet-webview==1.0.4
+# Windows / Linux 没有该控件，改走独立原生窗口（系统 WebView），不用浏览器。
+# macOS 会带上 pyobjc-framework-WebKit；Windows 用 Edge WebView2；Linux 用 WebKitGTK。
+# 分发版的平台声明见 pyproject.toml 的 [tool.flet.<平台>.dependencies]。
+pywebview==6.2.1
 
 # ---------------------------------------------------------------------
 # 【可选】房间语音聊天。缺了不影响启动，只是房间页提示「未安装」，

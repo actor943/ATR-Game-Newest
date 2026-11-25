@@ -34,6 +34,10 @@ STRINGS: dict[str, str] = {
     "route.billiards.desc": "Top-down 2D pool: pull back to shoot, clear your "
                             "group, then the 8-ball",
     "route.billiards.play": "Billiards · Match",
+    "route.billiards3d": "3D Billiards",
+    "route.billiards3d.desc": "Open-source 3D billiards: realistic physics, "
+                               "multiple rules, fully local",
+    "route.billiards3d.play": "3D Billiards · Match",
 
     # ---------------- main menu ----------------
     "menu.settings": "Settings",
@@ -155,6 +159,33 @@ STRINGS: dict[str, str] = {
     "billiards.tip_left": "Left",
     "billiards.tip_right": "Right",
     "billiards.tip_neutral": "Center (no spin)",
+
+    # ---------------- 3D billiards (open source) ----------------
+    "billiards3d.intro": "Open-source 3D billiards: realistic physics, "
+                         "three.js rendering, all assets stored locally.",
+    "billiards3d.license": "GPL-3.0 license",
+    "billiards3d.license_text": "The billiards engine comes from "
+                                "tailuge/billiards (GPL-3.0). Full source "
+                                "and licence are in third_party/billiards/.",
+    "billiards3d.rules": "Rules",
+    "billiards3d.reload": "Restart the current rack",
+    "billiards3d.hint": "Full-screen in-app on phones / macOS; a standalone "
+                        "window on Windows / Linux.",
+    "billiards3d.launch_failed": "Could not launch the 3D billiards window: {err}",
+    "billiards3d.back": "Back to rules",
+    "billiards3d.load_failed": "Failed to load billiards resources",
+    "billiards3d.nineball": "9-Ball",
+    "billiards3d.nineball.desc": "Hit the lowest ball first; pot the 9 to win",
+    "billiards3d.eightball": "8-Ball",
+    "billiards3d.eightball.desc": "Clear your group, then pot the 8-ball",
+    "billiards3d.threecushion": "Three Cushion",
+    "billiards3d.threecushion.desc": "The cue ball must hit three cushions first",
+    "billiards3d.snooker": "Snooker",
+    "billiards3d.snooker.desc": "Alternate reds and colours, score by value",
+    "billiards3d.practice": "Practice",
+    "billiards3d.practice.desc": "Rack them freely and rehearse your shots",
+    "billiards3d.sagu": "Sagu",
+    "billiards3d.sagu.desc": "Score points by potting balls to win",
 
     # ---------------- profile ----------------
     "profile.title": "Me",
@@ -540,6 +571,9 @@ STRINGS: dict[str, str] = {
     "music.prev": "Previous",
     "music.next": "Next",
     "music.loop": "Repeat one",
+    "music.mode_sequence": "In order (tap for repeat one)",
+    "music.mode_repeat": "Repeat one (tap for shuffle)",
+    "music.mode_shuffle": "Shuffle (tap for in order)",
     "music.expand": "Show library",
     "music.collapse": "Collapse",
     "music.hide": "Hide floating player",

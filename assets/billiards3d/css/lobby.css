@@ -1,0 +1,220 @@
+/* Lobby Overlay */
+#lobbyContainer {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  pointer-events: auto;
+}
+
+#lobbyOverlay {
+  display: flex;
+  align-items: center;
+}
+
+.challenge-row {
+  display: flex;
+  align-items: center;
+}
+
+/* Decorative crossed swords sitting between the incoming challenge pill and the
+   username pill. A real element (see dist/index.html) rather than generated
+   content, so it can be hidden from assistive tech, and it has no background:
+   it reads directly over the table. A hard 2px drop shadow (zero blur) keeps
+   the light glyph legible over bright cloth. The sibling rule keeps it out of
+   the way whenever no challenge is pending. */
+.challenge-vs {
+  position: relative;
+  margin-right: 3px;
+  font-size: 20px;
+  line-height: 1;
+  color: #e6e6e6;
+  text-shadow: 0 2px 0 rgb(0 0 0 / 60%);
+}
+
+/* Caption under the crossed swords, naming the action the ✅ beside them takes.
+   Absolutely positioned so it hangs below the glyph without adding to the row's
+   height -- in flow it would stretch .challenge-row past the 30px username pill
+   and drag that pill out of line. Smaller than the 16px of the lobby name and
+   the challenge pill, and, like the swords, no background: it reads straight
+   over the table with a hard drop shadow keeping it legible on bright cloth --
+   a shorter one than the swords', since their inherited 2px is too far for text
+   this small. Translated in src/view/lobbyindicator.ts, and hidden with its
+   parent when no challenge is pending (the sibling rule above). */
+.challenge-hint {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 400;
+  text-shadow: 0 1px 0 rgb(0 0 0 / 60%);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.challenge-pill[hidden] ~ .challenge-vs {
+  display: none;
+}
+
+.lobby-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 16px;
+}
+
+.status-emoji {
+  font-size: 0.5em;
+}
+
+.lobby-icon {
+  /* The color emoji glyph is drawn low inside its em box, so flex centring of
+     the line box still leaves it a couple of pixels below the text. Optical
+     nudge; transform avoids shifting the rest of the row. */
+  transform: translateY(-2px);
+}
+
+.lobby-rule {
+  /* The game mark left of the name: its own flex item, so the row centres it
+     against the name instead of sharing the name's line box, and a size of its
+     own -- smaller than the name -- with no line box of its own to add. A
+     circled digit is a symbol-font glyph whose metrics are taller than the
+     text's, which is what would push the name down with it. */
+  font-size: 0.8em;
+  line-height: 1;
+
+  /* Optical nudge down: flex centring leaves the mark a pixel high against
+     the name. transform keeps it off the rest of the row's layout. */
+  transform: translateY(1px);
+}
+
+.lobby-count.is-hidden {
+  display: none;
+}
+
+.challenge-pill {
+  /* Matches the adjacent username pill (a.pill in index.css) on height (30px),
+     radius (8px), fill (rgb(0 0 0 / 40%)) and rim (rgb(255 255 255 / 15%)),
+     so an incoming challenge reads as the same neutral chip rather than a
+     coloured badge. Horizontal padding is intentionally tighter than that
+     pill's 8px, keeping the content 4px from the rim. margin-right lifts the
+     pill 4px clear of its separator and the username pill. */
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgb(0 0 0 / 40%);
+  color: #fff;
+  padding: 0 4px;
+  border: 1px solid rgb(255 255 255 / 15%);
+  border-radius: 8px;
+  margin-right: 4px;
+  font-size: 16px;
+  line-height: 1.25;
+  height: 30px;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.challenge-pill[hidden] {
+  display: none;
+}
+
+/* One-off diagonal glint along the pill's rim when a challenge arrives.
+   A second copy of the border is painted by the pseudo-element and masked to
+   leave only the 1px ring (mask-composite hides its content box), so the
+   highlight never washes over the fill or the accept/decline buttons. The
+   pseudo-element is pulled out by 1px, since an absolutely positioned box is
+   laid out against the padding box and would otherwise sit inside the rim.
+   The animation runs once and has no fill mode: removing `hidden` takes the
+   pill from display:none, which restarts it for the next challenger, and the
+   base opacity leaves nothing behind after the 2s sweep. Shifting the
+   oversized gradient from 100% to 0% drags the highlight from the top-left
+   corner of the rim to the bottom-right. */
+.challenge-pill::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgb(255 255 255 / 0%) 46%,
+    rgb(255 255 255 / 90%) 50%,
+    rgb(255 255 255 / 0%) 54%
+  );
+  background-size: 200% 200%;
+  background-position: 100% 100%;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  pointer-events: none;
+  animation: challenge-glint 0.5s ease-out 1;
+}
+
+@keyframes challenge-glint {
+  0% {
+    opacity: 0;
+    background-position: 100% 100%;
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  85% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    background-position: 0% 0%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .challenge-pill::after {
+    animation: none;
+  }
+}
+
+.challenge-pill button {
+  /* Inline-flex centres the ✅/❌ glyphs in their own box, which keeps them
+     aligned with the text despite the uneven metrics of Unicode symbols. Dark
+     green/red fills keep the accept/decline meaning without the old glare. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1;
+  color: #fff;
+  border: 1px solid rgb(255 255 255 / 20%);
+  border-radius: 5px;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+#challengeAccept {
+  /* Sampled from the installed colour-emoji font (Noto Color Emoji, U+2705):
+     the tick's flat green is #7cb342, so the button disappears into the glyph
+     and only the tick reads. The dark green `color` is the monochrome-fallback
+     ink and keeps text/background contrast (~5.5:1) above AA if a platform
+     draws the tick from the font colour instead of its colour bitmap. */
+  background: #7cb342;
+  color: #15330b;
+}
+
+#challengeDecline {
+  background: #7f1d1d;
+}

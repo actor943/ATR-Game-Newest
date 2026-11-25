@@ -1,0 +1,135 @@
+import { BreakEvent } from "../events/breakevent"
+import { Controller, HitEvent, Input } from "./controller"
+import { ControllerBase } from "./controllerbase"
+import { PlayShot } from "./playshot"
+import { Replay } from "./replay"
+import { gameOverButtons } from "../utils/gameover"
+import { isFirstShot } from "../utils/utils"
+import { Camera } from "../view/camera"
+
+/**
+ * Aim using input events.
+ *
+ */
+export class Aim extends ControllerBase {
+  override get name(): string {
+    return "Aim"
+  }
+  constructor(container) {
+    super(container)
+    const table = this.container.table
+
+    table.cue.aimMode()
+    table.cue.showHelper(!this.container.freeAim)
+    table.cueball = this.container.rules.cueball
+    table.cue.aim.offset.set(0, 0, 0)
+
+    const params = new URLSearchParams(globalThis.location?.search)
+    let customShot = false
+    if (params.has("initShot")) {
+      const shot = JSON.parse(params.get("initShot")!)
+      if (shot) {
+        if (typeof shot.cueBallId === "number") {
+          table.cueball = table.balls[shot.cueBallId] || table.cueball
+        }
+        table.cue.aim.angle = shot.angle ?? table.cue.aim.angle
+        table.cue.aim.power = shot.power ?? table.cue.aim.power
+        if (shot.offset) {
+          table.cue.aim.offset.set(shot.offset.x ?? 0, shot.offset.y ?? 0, 0)
+        }
+        table.cue.aim.elevation = shot.elevation ?? 0
+        customShot = true
+      }
+    }
+
+    table.cue.aim.i = table.balls.indexOf(table.cueball)
+    table.cue.moveTo(table.cueball.pos)
+    if (!customShot) {
+      table.cue.aim.elevation = 0
+      table.cue.aimAtNext(
+        table.cueball,
+        this.container.rules.nextCandidateBall(),
+        table
+      )
+    } else {
+      table.cue.avoidCueTouchingOtherBall(table)
+    }
+    this.container.view.camera.aimzLerp = Camera.aimzDefaultLerp
+    this.container.view.camera.suggestMode(this.container.view.camera.aimView)
+    table.cue.updateAimInput()
+  }
+
+  override onFirst() {
+    this.container.table.showTraces(false)
+    this.container.view.clearLines()
+    this.container.table.cue.aimInputs.setDisabled(false)
+    this.container.table.cue.aimInputs.setButtonText("Hit")
+  }
+
+  override handleInput(input: Input): Controller {
+    switch (input.key) {
+      case "Space":
+        this.container.table.cue.setPower(input.t * this.scale)
+        break
+      case "SpaceUp":
+        return this.playShot()
+      default:
+        if (!this.commonKeyHandler(input)) {
+          return this
+        }
+    }
+
+    this.container.sendEvent(this.container.table.cue.aim)
+    return this
+  }
+
+  override handleBreak(breakEvent: BreakEvent): Controller {
+    if (!breakEvent.shots || breakEvent.shots.length === 0) {
+      // Broken multiplayer state: both players think they're active.
+      // Sync table state and show error notification.
+      if (breakEvent.init) {
+        this.container.table.updateFromShortSerialised(breakEvent.init)
+      }
+      this.container.notifyLocal(
+        {
+          type: "Info",
+          title: "System error",
+          subtext: "please return to lobby",
+          extra: gameOverButtons.lobby,
+          icon: "⚠️",
+        },
+        0
+      )
+      return this
+    }
+    return new Replay(
+      this.container,
+      breakEvent.init,
+      breakEvent.shots,
+      breakEvent.retry,
+      1500,
+      breakEvent.diagram
+    )
+  }
+
+  playShot() {
+    this.container.inputQueue.length = 0
+    this.container.view.minimap.hide()
+    this.container.table.cue.aimInputs.setDisabled(true)
+    const rulename = this.container.rules.rulename
+    if (
+      (rulename === "eightball" ||
+        rulename === "nineball" ||
+        rulename === "reveal") &&
+      isFirstShot(this.container.recorder)
+    ) {
+      this.container.table.cue.aim.power = Math.fround(
+        this.container.table.cue.aim.power * 1.2
+      )
+    }
+    const hitEvent = new HitEvent(this.container.table.serialiseHit())
+    this.container.sendEvent(hitEvent)
+    this.container.savePendingHit()
+    return new PlayShot(this.container)
+  }
+}

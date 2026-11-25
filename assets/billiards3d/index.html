@@ -1,0 +1,935 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Free Online Billiards, Pool &amp; Snooker Game</title>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <style>
+      @font-face {
+        font-family: Exo;
+        font-style: normal;
+        font-weight: 200;
+        font-display: swap;
+        src: url("https://fonts.gstatic.com/s/exo/v25/4UaZrEtFpBI4f1ZSIK9d4LjJ4tM3CwM.ttf")
+          format("truetype");
+      }
+
+      @font-face {
+        font-family: Exo;
+        font-style: normal;
+        font-weight: 600;
+        font-display: swap;
+        src: url("https://fonts.gstatic.com/s/exo/v25/4UaZrEtFpBI4f1ZSIK9d4LjJ4o0wCwM.ttf")
+          format("truetype");
+      }
+    </style>
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <meta
+      name="description"
+      content="Play free online pool, snooker and 3-cushion billiards with realistic 3D physics. 8-ball, 9-ball and practice modes, no download or sign-up."
+    />
+    <meta name="robots" content="index,follow" />
+    <meta name="theme-color" content="#0b1611" />
+    <link rel="canonical" href="https://billiards.tailuge.workers.dev/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      property="og:title"
+      content="Free Online Billiards, Pool &amp; Snooker Game"
+    />
+    <meta
+      property="og:description"
+      content="Play free online pool, billiards and snooker with realistic 3D physics. Try 8-ball, 9-ball, three-cushion carom and practice challenges in your browser. No download or account required."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://billiards.tailuge.workers.dev/" />
+    <meta
+      property="og:image"
+      content="https://billiards.tailuge.workers.dev/images/billiards.png"
+    />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="600" />
+    <meta
+      property="og:image:alt"
+      content="Break building pool table mid-break: cue ball in the foreground, numbered balls scattered across the blue baize"
+    />
+    <meta
+      property="og:video:url"
+      content="https://www.youtube.com/embed/bAeiRQcQuyg"
+    />
+    <meta
+      property="og:video:secure_url"
+      content="https://www.youtube.com/embed/bAeiRQcQuyg"
+    />
+    <meta property="og:video:type" content="text/html" />
+    <meta property="og:video:width" content="1280" />
+    <meta property="og:video:height" content="720" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="ocs-site-verification"
+      content="7e2c8724a132bd19fa2cac60ae730ba5"
+    />
+    <meta
+      name="twitter:title"
+      content="Free Online Billiards, Pool &amp; Snooker Game"
+    />
+    <meta
+      name="twitter:description"
+      content="Play free online pool, billiards and snooker with realistic 3D physics. Try 8-ball, 9-ball, three-cushion carom and practice challenges in your browser. No download or account required."
+    />
+    <meta
+      name="twitter:image"
+      content="https://billiards.tailuge.workers.dev/images/billiards.png"
+    />
+    <meta name="foundplay-verify" content="foundplay-verify-c4b4d827e235e075" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "VideoGame",
+        "name": "Free Online Billiards, Pool and Snooker",
+        "url": "https://billiards.tailuge.workers.dev/",
+        "image": "https://billiards.tailuge.workers.dev/images/billiards.png",
+        "description": "Play free online pool, billiards and snooker with realistic 3D physics. Try 8-ball, 9-ball, three-cushion carom and practice challenges in your browser.",
+        "applicationCategory": "GameApplication",
+        "operatingSystem": "Web",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "Tailuge Billiards",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://billiards.tailuge.workers.dev/favicon.png"
+          }
+        },
+        "creator": {
+          "@type": "Person",
+          "name": "tailuge"
+        },
+        "subjectOf": {
+          "@type": "VideoObject",
+          "name": "Billiards Pool Game Gameplay",
+          "description": "Realistic physics simulation billiards and pool game.",
+          "thumbnailUrl": "https://billiards.tailuge.workers.dev/images/billiards.png",
+          "contentUrl": "https://youtu.be/bAeiRQcQuyg",
+          "embedUrl": "https://www.youtube.com/embed/bAeiRQcQuyg",
+          "uploadDate": "2026-04-30T00:00:00+00:00"
+        }
+      }
+    </script>
+    <link rel="stylesheet" type="text/css" href="css/fonts.css" />
+    <link rel="stylesheet" type="text/css" href="css/index.css" />
+    <link rel="stylesheet" type="text/css" href="css/aiminputs.css" />
+    <link rel="stylesheet" type="text/css" href="css/powerinput.css" />
+    <link rel="stylesheet" type="text/css" href="css/notification.css" />
+    <link rel="stylesheet" type="text/css" href="css/tray.css" />
+    <link rel="stylesheet" type="text/css" href="css/chat.css" />
+    <link rel="stylesheet" type="text/css" href="css/lobby.css" />
+    <link rel="stylesheet" type="text/css" href="css/menu.css" />
+    <link rel="stylesheet" type="text/css" href="css/wood.css" />
+  </head>
+
+  <body>
+    <!-- hidden="until-found": the panel still only opens on demand, but the copy
+         stays search-indexable and find-in-page can reveal it. -->
+    <div class="about-more" id="about-more" hidden="until-found">
+      <div class="about-panel">
+        <button
+          class="about-close"
+          type="button"
+          id="aboutClose"
+          aria-label="Close"
+        >
+          ×
+        </button>
+        <div class="about-scroll">
+          <section class="play-section" aria-labelledby="playLabel">
+            <p class="panel-title" id="playLabel">Play</p>
+            <nav class="mode-nav" id="playNav">
+              <a
+                class="game-mode"
+                href="https://billiards.tailuge.workers.dev/eightball"
+                >8-ball</a
+              >
+              <a
+                class="game-mode"
+                href="https://billiards.tailuge.workers.dev/nineball"
+                >9-ball</a
+              >
+              <a
+                class="game-mode"
+                href="https://billiards.tailuge.workers.dev?ruletype=threecushion"
+                >3-cushion</a
+              >
+              <a
+                class="game-mode"
+                href="https://billiards.tailuge.workers.dev/snooker"
+                >Snooker</a
+              >
+              <a
+                class="game-mode"
+                href="https://billiards.tailuge.workers.dev?ruletype=sagu"
+                >Sagu</a
+              >
+              <a
+                class="game-mode"
+                href="https://billiards.tailuge.workers.dev?ruletype=libre"
+                >Libre</a
+              >
+              <a href="https://billiards.tailuge.workers.dev/challenge/">Eat</a>
+              <a href="https://billiards.tailuge.workers.dev/map/">Map</a>
+              <a href="https://billiards.tailuge.workers.dev/reveal/">Reveal</a>
+              <a href="https://billiards.tailuge.workers.dev/lobby">Lobby</a>
+            </nav>
+          </section>
+          <section id="controls" aria-labelledby="controlsLabel">
+            <p class="panel-title" id="controlsLabel">Controls</p>
+            <div class="phone">
+              <div class="top">
+                <div class="balls">
+                  <div class="ball"></div>
+                  <div class="ball"></div>
+                  <div class="ball"></div>
+                </div>
+                <div class="arrow fine"></div>
+                <div class="label">Fine Aim</div>
+                <div class="sub">near top = precise adjustment</div>
+              </div>
+              <div class="divider"></div>
+              <div class="zoom">
+                <div class="zoom-arrow"></div>
+                <div class="zoom-label">ZOOM</div>
+              </div>
+              <div class="bottom">
+                <div class="balls">
+                  <div class="ball"></div>
+                  <div class="ball"></div>
+                  <div class="ball"></div>
+                  <div class="ball"></div>
+                  <div class="ball"></div>
+                </div>
+                <div class="arrow coarse"></div>
+                <div class="label">Coarse Aim</div>
+                <div class="sub">near bottom = faster turning</div>
+              </div>
+            </div>
+            <div class="input-grid">
+              <div class="help-row">
+                <kbd>🖱️ scroll</kbd><span>Shot power</span>
+              </div>
+              <div class="help-row">
+                <kbd>🖱️ dbl click</kbd><span>Hit</span>
+              </div>
+              <div class="help-row">
+                <kbd>🖱️ right click</kbd><span>Draw lines</span>
+              </div>
+              <div class="help-row">
+                <kbd>Ctrl ⇦ ⇨</kbd><span>Fine aim</span>
+              </div>
+              <div class="help-row">
+                <kbd>⇧ ⇩</kbd><span>Topspin &amp; backspin</span>
+              </div>
+              <div class="help-row">
+                <kbd>Shift ⇦ ⇨</kbd><span>Side spin</span>
+              </div>
+              <div class="help-row">
+                <kbd>Space</kbd><span>Hit, hold for power</span>
+              </div>
+              <div class="help-row"><kbd>M</kbd><span>Masse angle</span></div>
+              <div class="help-row"><kbd>O</kbd><span>Camera view</span></div>
+              <div class="help-row"><kbd>F</kbd><span>Full screen</span></div>
+              <div class="help-row"><kbd>C</kbd><span>Chat</span></div>
+              <div class="help-row"><kbd>H</kbd><span>Help</span></div>
+              <div class="help-row">
+                <kbd>L</kbd><span>Chromeless, drag cue</span>
+              </div>
+            </div>
+          </section>
+
+          <details class="about-section" open>
+            <summary>About</summary>
+            <h1>Free Online Pool, Snooker &amp; Billiards Game</h1>
+            <p>
+              Play free online pool, snooker and carom billiards with
+              <a
+                href="https://github.com/tailuge/billiards"
+                target="_blank"
+                rel="noopener"
+                >Tailuge Billiards</a
+              >, an open-source 3D cue sports simulator. Play 8-ball, 9-ball,
+              snooker and three-cushion billiards directly in your browser on
+              desktop or mobile. No download, installation or account required.
+              Practise shots, challenge other players or explore realistic ball
+              motion, spin and cushion rebounds.
+            </p>
+            <p>
+              The game uses a physics engine based on published research into
+              billiard-ball motion, collisions and cushion impacts. Adjust your
+              aim, spin and shot power, experiment with different positions, and
+              study how the cue ball moves around the table.
+            </p>
+
+            <h2>Pool, Snooker and Carom Games</h2>
+            <ul>
+              <li>
+                <a href="eightball">8-ball pool</a>. Play the classic
+                solids-and-stripes pool game with realistic ball physics and a
+                high-resolution rendering mode.
+              </li>
+              <li>
+                <a href="nineball">9-ball pool</a>. Play the fast-paced rotation
+                game, practise custom table layouts, and share replay links to
+                review interesting shots.
+              </li>
+              <li>
+                <a href="snooker">Snooker</a>. Play snooker on a full-size
+                12-foot table with 15 reds, or practise on a smaller 6-foot
+                table. Practise potting, cue-ball positioning and
+                break-building.
+              </li>
+              <li>
+                <a href="threecushion">Three-cushion billiards</a>. Play
+                3-cushion carom, where the cue ball must contact both object
+                balls, reaching at least three cushions before contacting the
+                second object ball. Explore spin, rebound angles and cue-ball
+                paths with a physics model developed for realistic cushion
+                behaviour.
+              </li>
+              <li>
+                <a href="?ruletype=sagu">Sagu (Korean four-ball)</a>. Play the
+                Korean four-ball carom game on a standard or smaller 5-foot
+                table.
+              </li>
+            </ul>
+            <p>
+              Two practice bots, ClawBreak and TheFarJaw, play when nobody else
+              is around; the
+              <a href="speedrun/">speedrun challenge</a> races you against the
+              clock, and the <a href="reveal/">reveal game</a> uncovers pictures
+              with straight-pool potting.
+            </p>
+
+            <h2>Realistic billiards physics</h2>
+            <p>
+              This online billiards simulator models how balls roll, collide,
+              spin and rebound from the cushions. Its physics follow published
+              research on ball motion and cushion impacts. Explore ball-to-ball
+              collisions, throw, spin and cushion rebounds, and see how these
+              effects change the path of a shot. Ball motion follows
+              <a
+                href="https://billiards.colostate.edu/physics_articles/Han_paper.pdf"
+                target="_blank"
+                rel="noopener"
+                >Han (2005)</a
+              >
+              with corrections noted by
+              <a
+                href="https://ekiefl.github.io/2020/04/24/pooltool-theory/#3-han-2005"
+                target="_blank"
+                rel="noopener"
+                >Kiefl</a
+              >; ball-to-ball collisions follow
+              <a
+                href="https://billiards.colostate.edu/technical_proofs/new/TP_A-14.pdf"
+                target="_blank"
+                rel="noopener"
+                >Alciatore</a
+              >, including the throw effect; and cushion impacts use
+              <a
+                href="https://billiards.colostate.edu/physics_articles/Mathavan_IMechE_2010.pdf"
+                target="_blank"
+                rel="noopener"
+                >Mathavan (2010)</a
+              >, with Stronge's compliant-cushion model available as an
+              alternative. Spin, throw and cushion rebound can all be inspected
+              and re-tuned on the
+              <a href="diagrams/three">three-cushion physics page</a>.
+            </p>
+
+            <h2>Pool, Snooker and Billiards Practice</h2>
+            <ul>
+              <li>
+                <a href="practice">Billiards practice table</a>. Set up custom
+                shots and ball positions, then repeat them to practise aim, spin
+                and cue-ball control without an opponent or a time limit.
+              </li>
+              <li>
+                <a href="exam/">Billiards skill tests</a>. Work through a graded
+                series of shots and receive an assessment level, completion
+                status and score.
+              </li>
+              <li>
+                <a href="exam/snooker">Snooker practice and assessment</a>. Work
+                through a graded course of snooker shots, from basic pots to
+                difficult positions.
+              </li>
+              <li>
+                <a href="exam/threecushion"
+                  >Three-cushion practice and assessment</a
+                >. Practise carom shots across a graded series, from basic
+                positions to advanced cushion routes.
+              </li>
+              <li>
+                <a href="fit/research">Shot sensitivity analysis</a>. See how
+                aim, spin, power and elevation change the result.
+              </li>
+              <li>
+                <a href="diagrams/diamond">The diamond system</a> for
+                three-cushion cue-ball paths.
+              </li>
+            </ul>
+
+            <h2>Online Multiplayer Pool and Billiards</h2>
+            <p>
+              Play online billiards against other players. The
+              <a href="lobby">multiplayer lobby</a> shows who is online and lets
+              you challenge available opponents. Use
+              <a href="2tab">two-tab mode</a> to play across two windows on one
+              device, or join <a href="arena">scheduled arenas</a> for timed
+              tournaments. High breaks appear on the
+              <a
+                href="https://scoreboard-tailuge.vercel.app/leaderboard"
+                target="_blank"
+                rel="noopener"
+                >leaderboard</a
+              >
+              and rated games contribute to your
+              <a
+                href="https://scoreboard-tailuge.vercel.app/elo"
+                target="_blank"
+                rel="noopener"
+                >Glicko-2 rating</a
+              >.
+            </p>
+
+            <h2>Guides and Billiards Research</h2>
+            <ul>
+              <li>
+                <a href="blog1">Why most pool games feel wrong</a>: what makes a
+                physics engine read as real, and where the cheap ones cheat.
+              </li>
+              <li>
+                <a href="blog2">Clearing the line-up</a>: a practice log on
+                running the balls, and how to drill it on the practice table.
+              </li>
+              <li>
+                <a href="blog3">Implementing Mathavan cushion physics</a>: the
+                maths behind the cushion model, written up in the open.
+              </li>
+            </ul>
+
+            <h2>Open-Source Billiards Simulator</h2>
+            <p>
+              The simulator is plain TypeScript with
+              <a href="https://threejs.org/">three.js</a> for rendering, and the
+              source is under the GNU GPL. The code is on
+              <a
+                href="https://github.com/tailuge/billiards"
+                target="_blank"
+                rel="noopener"
+                >GitHub</a
+              >, and contributions are welcome: bug reports, physics tweaks,
+              translations and new rule sets. Read more on the
+              <a href="about">about page</a>.
+            </p>
+
+            <h2>Play Billiards in Your Language</h2>
+            <ul>
+              <li lang="ko">
+                <h3>무료 온라인 당구 게임</h3>
+                <p>
+                  설치나 회원가입 없이 바로 즐길 수 있는 무료 온라인 당구
+                  게임입니다. 3쿠션, 사구(4구), 포켓볼, 스누커 등 다양한 당구
+                  게임을 브라우저에서 친구들과 함께 플레이하거나 혼자 연습할 수
+                  있습니다.
+                </p>
+                <p>
+                  실제 당구처럼 물리 법칙을 적용한 무료 당구 시뮬레이터로, 언제
+                  어디서나 온라인으로 당구를 즐겨보세요.
+                </p>
+                <p>
+                  <a href="./korean">한국어 당구 게임 자세히 보기 →</a>
+                </p>
+                <p>
+                  <a href="https://blog.naver.com/jasuil/224416229214"
+                    >네이버 블로그</a
+                  >,
+                  <a href="https://news11213.tistory.com/1">티스토리 블로그</a>.
+                </p>
+                <p>
+                  이 무료 사이트가 더 많은 당구인들에게 알려질 수 있도록
+                  도와주세요. 마음씨 좋은 분이 계시다면
+                  <a href="https://cafe.naver.com/3cushion">네이버 3쿠션 카페</a
+                  >에 이 게임을 소개해 주시면 정말 감사하겠습니다. 당구를
+                  사랑하는 여러분,
+                  <a href="https://cafe.naver.com/8440566">네이버 당구 카페</a
+                  >에도 이 무료 온라인 당구 게임을 널리 알려 주세요. 함께
+                  플레이하는 사람이 한 명씩 늘어날 때마다 이 프로젝트도 조금씩
+                  더 발전합니다.
+                </p>
+              </li>
+              <li>
+                <a href="./japanese" lang="ja"
+                  >無料ビリヤードゲーム・オンラインビリヤード</a
+                >
+                —
+                ブラウザで無料のビリヤードゲームをプレイ。3クッション（スリークッション）や
+                9ボールなどを、ダウンロード・会員登録なしで楽しめます。
+                <a
+                  href="https://ameblo.jp/tailuge/entry-12981511558.html"
+                  lang="ja"
+                  >日本でのビリヤードの思い出</a
+                >
+                もご覧ください。
+              </li>
+              <li>
+                <a href="./chinese" lang="zh">免費線上斯諾克</a> —
+                免安裝、免註冊，手機也能玩。
+              </li>
+              <li>
+                <a href="./turkish" lang="tr">Ücretsiz online bilardo</a> — 3
+                bant karambol, gerçekçi fizik, kayıt gerekmez.
+              </li>
+              <li>
+                <a href="./german" lang="de">Kostenloses 3-Band-Billard</a>
+                — ohne Download und Anmeldung im Browser.
+              </li>
+              <li>
+                <a href="./spanish" lang="es">Billar a tres bandas gratis</a>
+                — sin descargas ni registro, también en el móvil.
+              </li>
+              <li>
+                <a href="./dutch" lang="nl">Online driebanden spelen</a> —
+                gratis carambole in je browser.
+              </li>
+              <li>
+                <a href="./vietnamese" lang="vi">Game bi-a 3 băng</a> — miễn
+                phí, không cần cài đặt hay đăng ký.
+              </li>
+              <li lang="fr">
+                Entraînez-vous au libre avec
+                <a href="./exam/libre">l'examen</a>.
+              </li>
+            </ul>
+            <h2>Mentions</h2>
+            <p>
+              Pool and carom communities link here, including
+              <a href="https://pbc-molbergen.de/Simulator.html">Molbergen</a>,
+              <a
+                href="https://forums.azbilliards.com/threads/open-source-three-cushion-simulator.587516/"
+                >AZBilliards</a
+              >,
+              <a
+                href="https://www.thesnookerforum.co.uk/board/forum/other-cuesports/billiards/1045334-3-cushion-billiards"
+                >The Snooker Forum</a
+              >,
+              <a href="https://billard-aktuell.de/forum/viewtopic.php?t=59609"
+                >Billard-aktuell</a
+              >
+              and
+              <a
+                href="https://www.reddit.com/r/billiards/comments/1upm8vu/speedrun/"
+                >r/billiards</a
+              >. There are write-ups on
+              <a href="https://blog.naver.com/jasuil/224416229214">Naver</a>,
+              <a href="https://news11213.tistory.com/1">Tistory</a>
+              and
+              <a href="https://ameblo.jp/tailuge/entry-12981511558.html"
+                >Ameblo</a
+              >.
+            </p>
+            <p>
+              Game directories list it too:
+              <a href="https://www.bored.com/link/tailuge-github-io-billiards/"
+                >Bored</a
+              >, <a href="https://tailuge.itch.io/">itch.io</a>,
+              <a href="https://gamejolt.com/games/billiards/1083832">GameJolt</a
+              >, <a href="https://github.com/fmhy/FMHY/wiki/Gaming">FMHY</a>,
+              <a href="https://www.appimagehub.com/p/2365428/">AppImageHub</a>,
+              <a href="https://webgames.me/play/billards-by-tailuge">WebGames</a
+              >,
+              <a href="https://iogame.io/games/billards-by-tailuge">IOGame</a>,
+              <a
+                href="https://reporank.net/en/repo/tailuge-billiards.html#repo-feedback"
+                >RepoRank</a
+              >,
+              <a href="https://indexpage.org/search?q=billiards">IndexPage</a>,
+              <a href="https://slowden.com/games/tailuge-billiards/">Slowden</a
+              >,
+              <a href="https://foundplay.io/games/billiards?utm_source=creator"
+                >Foundplay</a
+              >,
+              <a href="https://playpixelsprout.com/games/billiards.html"
+                >Pixelsprout</a
+              >
+              and <a href="https://popshof.com/practice">Popshof</a>. The 4388
+              arcade carries three entries:
+              <a href="https://4388.fun/g/631">4388</a>,
+              <a href="https://4388.fun/g/2294">Idol</a> and
+              <a href="https://4388.fun/g/2295">Tokyo</a>.
+            </p>
+            <figure class="about-shot">
+              <img
+                src="images/promo.png"
+                alt="Overhead view of a pool table mid-break: the cue ball sits in the foreground with the cue aimed across a blue baize scattered with numbered balls"
+                width="1120"
+                height="707"
+                loading="lazy"
+                decoding="async"
+              />
+            </figure>
+            <h2 class="keywords">Keywords</h2>
+            <p class="keywords">
+              billiards, billiards simulator, online billiards, free billiards
+              game, pool game, snooker game, 8-ball, 9-ball, three-cushion
+              billiards, three cushion carom, carom billiards, 4-ball billiards,
+              open source billiards, ビリヤード, ビリヤードゲーム,
+              無料ビリヤード, 3クッション, スリークッション, 9ボール, 당구, 무료
+              당구, 온라인 당구, 당구 게임, 3쿠션, 사구, 스누커, Bida 3 băng,
+              bi-a 3 băng, Biliar 3 bandas, billar a tres bandas, billar de
+              carambolas, jugar billar carambolas, billar online gratis, Üç bant
+              bilardo, üç bant, driebanden, biljart, gratis biljart, biljart
+              spel, Carom3D, ShootersPool
+            </p>
+          </details>
+        </div>
+      </div>
+    </div>
+
+    <main>
+      <div id="viewP1" class="view3d">
+        <div id="snookerScoreOverlay">
+          <div id="snookerScore" aria-live="polite">
+            <div id="breakScore" class="breakScore"></div>
+          </div>
+        </div>
+        <div id="notificationOverlay">
+          <div id="notification" aria-live="assertive" role="alert"></div>
+        </div>
+        <div id="botDebugOverlay">
+          <header>
+            <span id="botDebugToggle" class="bot-debug-emoji">🦞</span>
+            <div>
+              <button
+                id="botDebugClear"
+                type="button"
+                aria-label="Clear debug log"
+              >
+                Clear
+              </button>
+            </div>
+          </header>
+          <pre id="botDebugLog" aria-live="polite"></pre>
+        </div>
+        <div class="chatarea">
+          <div
+            id="chatoutput"
+            class="chatoutput"
+            role="log"
+            aria-live="polite"
+          ></div>
+        </div>
+        <dialog id="inputTextDiv" contenteditable="false">
+          <div id="inputTextDivInner">
+            <input
+              id="inputText"
+              type="text"
+              placeholder="Enter text here..."
+              maxlength="64"
+              autofocus
+              autocomplete="off"
+              aria-label="Chat message input"
+            />
+            <div
+              id="chatEmojiList"
+              role="group"
+              aria-label="Emoji messages"
+            ></div>
+            <button id="inputSend" type="button" aria-label="Send chat message">
+              ➤
+            </button>
+            <button
+              id="toggleChatMode"
+              type="button"
+              aria-label="Switch to emoji mode"
+            >
+              <span class="chat-text-mode-icon">👾</span>
+              <span class="chat-emoji-mode-icon">⌨️</span>
+            </button>
+            <button id="inputClose" type="button" aria-label="Close chat input">
+              ✖
+            </button>
+          </div>
+        </dialog>
+      </div>
+      <div id="panel" class="panel wood-texture">
+        <div class="aimControlColumn">
+          <div class="aimingArea">
+            <button
+              class="hitButton timeout-btn"
+              id="cueHit"
+              type="button"
+              aria-label="Hit cue ball"
+            >
+              hit
+            </button>
+          </div>
+          <div id="tiltSliderContainer" class="tiltSliderContainer" hidden>
+            <angle-input
+              id="cueTilt"
+              role="slider"
+              aria-label="tilt angle"
+              aria-valuemin="0"
+              aria-valuemax="72"
+              aria-valuenow="0"
+            ></angle-input>
+          </div>
+          <template id="angle-input-template">
+            <div class="area" id="area">
+              <div class="ball"></div>
+              <div class="rotator" id="rot">
+                <div class="stick">
+                  <div class="tip"></div>
+                  <div class="ferrule"></div>
+                  <div class="shaft"></div>
+                  <div class="butt"></div>
+                </div>
+              </div>
+            </div>
+          </template>
+          <div id="ballContainerWrapper" class="ballContainerWrapper">
+            <button
+              id="openElevation"
+              type="button"
+              class="openElevation"
+              aria-label="Cue elevation"
+              aria-controls="tiltSliderContainer"
+              aria-expanded="false"
+            >
+              +
+            </button>
+            <div id="ballContainer" class="ballContainer">
+              <div id="objectBall" class="objectBall"></div>
+              <div id="cueBall" class="cueBall">
+                <div id="cueTip" class="cueTip"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div id="powerSliderContainer" class="powerSliderContainer">
+          <div class="power-track"></div>
+          <input
+            class="powerSlider"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value="0.65"
+            id="cuePower"
+            aria-label="power slider"
+          />
+          <span id="powerPercent" class="powerPercent">65%</span>
+        </div>
+        <div class="outerMenu">
+          <details id="menuDropdown" class="menuDropdown">
+            <summary
+              class="menuButton half-height"
+              title="menu"
+              id="menu"
+              aria-label="Menu"
+            >
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="#000"
+                stroke-width="2"
+              >
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+              </svg>
+            </summary>
+            <div id="menuItems" class="menuItems">
+              <button
+                class="menuButton half-height"
+                title="comment"
+                id="comment"
+                type="button"
+                aria-label="Comment"
+                hidden
+              >
+                🗨
+              </button>
+              <button
+                class="menuButton half-height"
+                title="diagram"
+                id="diagram"
+                type="button"
+                aria-label="Diagram"
+                hidden
+              >
+                📸
+              </button>
+              <button
+                class="menuButton half-height"
+                title="fullscreen"
+                id="fullscreen"
+                type="button"
+                aria-label="Fullscreen"
+              >
+                ⛶
+              </button>
+              <button
+                class="menuButton half-height"
+                title="fast forward"
+                id="ffwd"
+                type="button"
+                aria-label="Fast forward"
+                hidden
+              >
+                ⏩︎
+              </button>
+              <button
+                class="menuButton half-height"
+                title="share"
+                id="share"
+                type="button"
+                aria-label="Share replay link"
+                hidden
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <circle cx="18" cy="5" r="3"></circle>
+                  <circle cx="6" cy="12" r="3"></circle>
+                  <circle cx="18" cy="19" r="3"></circle>
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                </svg>
+              </button>
+              <button
+                class="menuButton half-height"
+                title="concede"
+                id="concede"
+                type="button"
+                aria-label="Concede"
+                hidden
+              >
+                🏳️
+              </button>
+              <button
+                class="menuButton half-height"
+                title="shot analysis"
+                id="analysis"
+                type="button"
+                aria-label="Shot analysis"
+                hidden
+              >
+                🔍
+              </button>
+              <button
+                class="menuButton half-height"
+                title="chromeless (L)"
+                id="chromeless"
+                type="button"
+                aria-label="Toggle chromeless mode"
+              >
+                👁︎
+              </button>
+              <button
+                class="menuButton half-height"
+                title="help
+도움말
+說明"
+                id="help"
+                type="button"
+                aria-label="Help"
+                aria-controls="about-more"
+                aria-expanded="false"
+              >
+                ⓘ
+              </button>
+            </div>
+          </details>
+          <canvas id="minimap" width="252" height="136" hidden>
+            Table minimap
+          </canvas>
+          <button
+            class="menuButton aim"
+            title="view"
+            id="camera"
+            type="button"
+            aria-label="Toggle camera view"
+          >
+            🎥
+          </button>
+        </div>
+      </div>
+
+      <div
+        id="ballTray"
+        class="tray-container"
+        aria-live="polite"
+        role="log"
+        hidden
+      >
+        <div class="nav-btn btn-left" id="trayLeft">❮</div>
+        <div class="ball-tray-list" id="ballTrayList"></div>
+        <div class="nav-btn btn-right" id="trayRight">❯</div>
+      </div>
+      <div id="trayTimer" class="tray-timer" hidden></div>
+      <div class="tray-score-container">
+        <div id="p1Score" class="p1Score"></div>
+        <div id="p2Score" class="p2Score"></div>
+      </div>
+      <div id="lobbyContainer">
+        <div class="challenge-row">
+          <span id="challengePill" class="challenge-pill" hidden>
+            <button
+              id="challengeAccept"
+              type="button"
+              aria-label="Accept challenge"
+            >
+              ✅
+            </button>
+            <button
+              id="challengeDecline"
+              type="button"
+              aria-label="Decline challenge"
+            >
+              ❌
+            </button>
+          </span>
+          <span class="challenge-vs" aria-hidden="true"
+            >⚔<span id="challengeHint" class="challenge-hint"></span
+          ></span>
+        </div>
+        <a
+          href="https://billiards.tailuge.workers.dev/lobby"
+          class="pill"
+          title="Lobby"
+          id="lobbyOverlay"
+          aria-label="Multiplayer Lobby"
+          ><span class="lobby-count"></span
+        ></a>
+      </div>
+    </main>
+    <script defer src="three_core.js"></script>
+    <script defer src="three_module.js"></script>
+    <script defer src="three_examples.js"></script>
+    <script defer src="messaging.js"></script>
+    <script defer src="index.js"></script>
+  </body>
+</html>

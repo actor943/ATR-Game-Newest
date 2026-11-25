@@ -1,0 +1,397 @@
+import { Container } from "../../container/container"
+import { NotificationEvent } from "../../events/notificationevent"
+import { ScoreEvent } from "../../events/scoreevent"
+import { End } from "../../controller/end"
+import { Session } from "./session"
+import { gameOverButtons } from "../../utils/gameover"
+import { t } from "../../utils/i18n"
+import { VERSION } from "../../utils/version"
+import { NotificationHighBreak } from "../../view/notification"
+
+export interface MatchResult {
+  winner: string
+  winnerId?: string
+  loser?: string
+  loserId?: string
+  winnerScore: number
+  loserScore?: number
+  ruleType: string
+  replayData?: string
+  version?: string
+  userAgent?: string
+  bot?: boolean
+  freeaim?: boolean
+  tableSize?: number
+  arenaId?: string
+  berserk?: boolean
+  club?: string
+  card?: string
+}
+
+export class MatchResultHelper {
+  static presentGameEnd(
+    container: Container,
+    rulename: string,
+    forcedAmIWinner?: boolean,
+    endSubtext?: string
+  ): End {
+    container.recorder.wholeGameLink()
+
+    const session = Session.getInstance()
+    const amIWinner = this.determineWinner(
+      session,
+      rulename,
+      forcedAmIWinner,
+      endSubtext
+    )
+    const subtext = endSubtext ?? this.getScoreSubtext(container, rulename)
+
+    this.notifyEndState(container, rulename, amIWinner, subtext)
+
+    const result = this.createMatchResult(rulename, session, amIWinner)
+
+    return new End(container, result)
+  }
+
+  private static determineWinner(
+    session: Session,
+    rulename: string,
+    forcedAmIWinner?: boolean,
+    endSubtext?: string
+  ): boolean {
+    if (Session.isSpectator()) {
+      return false
+    }
+
+    const { p1, p2 } = session.orderedScoresForHud()
+
+    const winnerIndex = p1 >= p2 ? 0 : 1
+    const playerIndex = session.playerIndex
+
+    if (forcedAmIWinner !== undefined) {
+      if (endSubtext?.toLowerCase().includes("conceded")) {
+        return forcedAmIWinner
+      }
+      const isWinnerByScore = winnerIndex === playerIndex
+      if (Session.isBotMode()) {
+        // If it's a natural end (forcedAmIWinner came from rules), score should be considered
+        // If it's a concession (forcedAmIWinner=false passed to rules), forcedAmIWinner should be respected.
+        // Rules pass false to handleGameEnd when bot wins by score/legal pot.
+        // But BotEventHandler should now be passing the correct winner based on score.
+        return forcedAmIWinner
+      }
+      // For games like NineBall/EightBall, forcedAmIWinner (potting 9-ball/8-ball) is king.
+      // For Snooker, score is king.
+      if (rulename === "snooker") {
+        return isWinnerByScore
+      }
+      return forcedAmIWinner
+    }
+
+    return winnerIndex === playerIndex
+  }
+
+  private static notifyEndState(
+    container: Container,
+    rulename: string,
+    amIWinner: boolean,
+    subtext: string
+  ): void {
+    if (amIWinner) {
+      this.notifyWin(container, rulename, subtext)
+      this.sendLossNotification(container, rulename)
+    } else if (Session.isSpectator()) {
+      this.notifySpectator(container, subtext)
+    } else {
+      this.notifyLoss(container, rulename, subtext)
+      this.sendWinNotification(container, rulename)
+    }
+  }
+
+  static isWinner(result: MatchResult): boolean {
+    const session = Session.getInstance()
+    return result.winnerId
+      ? result.winnerId === session.clientId
+      : result.winner === session.playername
+  }
+
+  private static notifyWin(
+    container: Container,
+    rulename: string,
+    subtext: string
+  ) {
+    container.notifyLocal({
+      type: "GameOver",
+      title: t("YOU WON"),
+      subtext: subtext,
+      highBreaks: this.getHighBreaks(container),
+      icon: "🏆",
+      extraClass: "is-winner",
+      extra: this.getGameOverButtons(container, rulename, true),
+      share: true,
+      duration: 0,
+    })
+  }
+
+  private static notifyLoss(
+    container: Container,
+    rulename: string,
+    subtext: string
+  ) {
+    container.notifyLocal({
+      type: "GameOver",
+      title: t("YOU LOST"),
+      subtext: Session.isBotMode() ? "Lostber 🦞" : subtext,
+      highBreaks: this.getHighBreaks(container),
+      icon: "🥈",
+      extraClass: "is-loser",
+      extra: this.getGameOverButtons(container, rulename),
+      share: true,
+      duration: 0,
+    })
+  }
+
+  private static notifySpectator(container: Container, subtext: string) {
+    container.notifyLocal({
+      type: "GameOver",
+      title: t("GAME OVER"),
+      subtext: subtext,
+      highBreaks: this.getHighBreaks(container),
+      icon: "🏆",
+      extraClass: "",
+      extra: gameOverButtons.lobby,
+      share: true,
+      duration: 0,
+    })
+  }
+
+  private static sendLossNotification(container: Container, rulename: string) {
+    if (container.isSinglePlayer) return
+    const session = Session.getInstance()
+    const { p1, p2 } = session.orderedScoresForHud()
+    container.sendScoreUpdate(p1, p2, 0)
+    container.sendEvent(
+      new NotificationEvent({
+        type: "GameOver",
+        // Source strings: the opponent renders this in their own language.
+        title: "YOU LOST",
+        icon: "🥈",
+        extraClass: "is-loser",
+        extra: this.getRemoteGameOverButtons(rulename),
+        share: true,
+        duration: 0,
+      })
+    )
+  }
+
+  private static sendWinNotification(container: Container, rulename: string) {
+    if (container.isSinglePlayer) return
+    const session = Session.getInstance()
+    const { p1, p2 } = session.orderedScoresForHud()
+    container.sendEvent(new ScoreEvent(p1, p2, 0))
+    container.sendEvent(
+      new NotificationEvent({
+        type: "GameOver",
+        title: "YOU WON",
+        icon: "🏆",
+        extraClass: "is-winner",
+        extra: this.getRemoteGameOverButtons(rulename),
+        share: true,
+        duration: 0,
+      })
+    )
+  }
+
+  private static getGameOverButtons(
+    container: Container,
+    rulename: string,
+    won = false
+  ): string {
+    const session = Session.getInstance()
+    const isSinglePlayer = container.isSinglePlayer || Session.isBotMode()
+    const nextTurnId =
+      session.playerIndex === 0 ? session.opponentClientId : session.clientId
+
+    return gameOverButtons.forMode(
+      isSinglePlayer,
+      session.opponentClientId,
+      session.opponentName,
+      rulename,
+      nextTurnId,
+      session.tournamentId,
+      won
+    )
+  }
+
+  private static getRemoteGameOverButtons(rulename: string): string {
+    const session = Session.getInstance()
+    const nextTurnId =
+      session.playerIndex === 0 ? session.opponentClientId : session.clientId
+
+    return gameOverButtons.forMode(
+      false,
+      session.clientId,
+      session.playername,
+      rulename,
+      nextTurnId,
+      session.tournamentId
+    )
+  }
+
+  private static calculateInningsStats(container: Container) {
+    const entries = container.recorder.entries
+    const shots = entries.filter((e) => e.event && e.event.type === "AIM")
+
+    let whiteInnings = 0
+    let yellowInnings = 0
+
+    let previousCueBallIndex: number | null = null
+
+    for (const entry of shots) {
+      const currentCueBallIndex = (entry.event as any).i ?? 0
+
+      if (currentCueBallIndex !== previousCueBallIndex) {
+        if (currentCueBallIndex === 0) {
+          whiteInnings++
+        } else {
+          yellowInnings++
+        }
+        previousCueBallIndex = currentCueBallIndex
+      }
+    }
+
+    return {
+      whiteInnings,
+      yellowInnings,
+    }
+  }
+
+  private static formatAverage(score: number, innings: number): string {
+    if (innings <= 0) {
+      return "0"
+    }
+    return String((score / innings).toFixed(1))
+  }
+
+  private static getScoreSubtext(
+    container: Container,
+    rulename: string
+  ): string {
+    if (
+      rulename === "threecushion" ||
+      rulename === "sagu" ||
+      rulename === "libre"
+    ) {
+      const stats = this.calculateInningsStats(container)
+      if (container.isSinglePlayer) {
+        const score = Session.getInstance().myScore()
+        const totalInnings = stats.whiteInnings + stats.yellowInnings
+        const avg = this.formatAverage(score, totalInnings)
+        return `Score: ${score} (Avg: ${avg} - ${totalInnings} inn)`
+      } else {
+        const { p1, p2 } = Session.getInstance().orderedScoresForHud()
+        const names = Session.getInstance().orderedNamesForHud()
+        const p1Name = names.p1Name || "Player 1"
+        const p2Name = names.p2Name || "Player 2"
+
+        const p1Innings = stats.whiteInnings
+        const p2Innings = stats.yellowInnings
+
+        const p1Avg = this.formatAverage(p1, p1Innings)
+        const p2Avg = this.formatAverage(p2, p2Innings)
+
+        return (
+          `${p1Name}: ${p1} (Avg: ${p1Avg} - ${p1Innings} inn)\n` +
+          `${p2Name}: ${p2} (Avg: ${p2Avg} - ${p2Innings} inn)`
+        )
+      }
+    }
+
+    if (container.isSinglePlayer) {
+      return `Score: ${Session.getInstance().myScore()}`
+    }
+
+    const { p1, p2 } = Session.getInstance().orderedScoresForHud()
+    return `${p1} - ${p2}`
+  }
+
+  public static getHighBreaks(container: Container): NotificationHighBreak[] {
+    return container.ballTray
+      .getTopBreaks(3)
+      .map(({ score, hiScoreUri }) => ({ score, url: hiScoreUri }))
+  }
+
+  private static createMatchResult(
+    rulename: string,
+    session: Session,
+    iWon: boolean
+  ): MatchResult {
+    const myScore = session.myScore()
+    const opponentScore = session.opponentScore()
+
+    const winnerName = iWon
+      ? session.playername || "Anon"
+      : session.opponentName || "Opponent"
+    const loserName = iWon
+      ? session.opponentName || "Opponent"
+      : session.playername || "Anon"
+    const winnerScore = iWon ? myScore : opponentScore
+    const loserScore = iWon ? opponentScore : myScore
+
+    const opponentId = Session.isBotMode()
+      ? Session.getBotUserId()
+      : (session.opponentClientId ?? "opponent")
+    const winnerId = iWon ? session.clientId : opponentId
+    const loserId = iWon ? opponentId : session.clientId
+    const result: MatchResult = {
+      winner: winnerName,
+      winnerId: winnerId,
+      winnerScore: winnerScore,
+      ruleType: rulename,
+      bot: Session.isBotMode(),
+    }
+
+    if (session.opponentName) {
+      result.loser = loserName
+      result.loserId = loserId
+      result.loserScore = loserScore
+    }
+
+    result.version = VERSION
+    result.userAgent = navigator?.userAgent
+
+    if (session.tournamentId) {
+      result.arenaId = session.tournamentId
+    }
+
+    if (typeof globalThis.location !== "undefined") {
+      this.applyUrlParamsToResult(result)
+    }
+
+    return result
+  }
+
+  private static applyUrlParamsToResult(result: MatchResult): void {
+    const params = new URLSearchParams(globalThis.location.search)
+    if (params.get("freeaim") === "true") {
+      result.freeaim = true
+    }
+    const tableSize = Number.parseFloat(params.get("tableSize") || "10")
+    if (tableSize < 10) {
+      result.tableSize = tableSize
+    }
+    if (params.get("berserk") === "true") {
+      result.berserk = true
+    }
+    const clubName = params.get("clubName")
+    if (clubName) {
+      result.club = clubName
+    }
+    // Reveal games are launched with the display name of the card being
+    // played (?card=BoA); keep the decoded name so the scoreboard can show it.
+    const card = params.get("card")
+    if (card && result.ruleType === "reveal") {
+      result.card = card
+    }
+  }
+}

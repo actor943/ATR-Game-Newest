@@ -1,0 +1,161 @@
+import { Scene } from "three"
+import { Session } from "../network/client/session"
+import { Portrait } from "./portrait"
+import {
+  minusXWall,
+  plusXWall,
+  PORTRAIT_SCALE,
+  PortraitPlacement,
+} from "./portraitplacements"
+
+export const DEFAULT_EMOJI = "📺"
+export const GLOBE_EMOJI = "🌎"
+
+// Regional-indicator symbol for "A" (U+1F1E6); the letters A–Z are contiguous.
+const REGIONAL_INDICATOR_A = 0x1f1e6
+
+/**
+ * Best-effort flag emoji for the player's browser locale (e.g. "en-GB" →
+ * 🇬🇧). Reads the BCP 47 region subtag from `navigator.language` and converts
+ * it to a pair of regional-indicator symbols; falls back to `DEFAULT_EMOJI`
+ * when the locale carries no usable two-letter region.
+ */
+export function localeFlagEmoji(): string {
+  if (typeof navigator === "undefined") return DEFAULT_EMOJI
+  const locale = navigator.language
+  // en-US is a near-universal OS default that rarely reflects the player's
+  // real country, so show a globe instead of a misleading 🇺🇸.
+  if (locale.toLowerCase() === "en-us") return GLOBE_EMOJI
+  const region = locale.split("-").pop()?.toUpperCase() ?? ""
+  if (!/^[A-Z]{2}$/.test(region)) return DEFAULT_EMOJI
+  return String.fromCodePoint(
+    REGIONAL_INDICATOR_A + (region.charCodeAt(0) - 65),
+    REGIONAL_INDICATOR_A + (region.charCodeAt(1) - 65)
+  )
+}
+
+export interface PortraitMode {
+  roomVisible: boolean
+  singlePlayer: boolean
+  replay?: boolean
+}
+
+export interface PortraitSpec {
+  emoji: string
+  name?: string
+  placement: PortraitPlacement
+  scale?: number
+  clubPlaque?: boolean
+}
+
+/**
+ * Wall plaque text: the club name when the game was started from a map club
+ * (?clubName=), so the plaque reads as the club's own signage; otherwise the
+ * player name. The player name itself is never rewritten, so match results
+ * keep reporting it unchanged. Resolves to undefined when there is nothing to
+ * draw, which hides the plaque.
+ */
+function clubFromQuery(): string {
+  return (
+    new URLSearchParams(globalThis.location?.search ?? "").get("clubName") ?? ""
+  )
+}
+
+function plaqueName(playername: string): string | undefined {
+  const name = clubFromQuery() || playername
+  return name || undefined
+}
+
+/**
+ * Decides which portraits to show for the current mode, separated from how
+ * they are rendered. In single-player `mine` sits on the +X wall; in live
+ * two-player the portraits swap walls (`mine` on −X, opponent on +X). Emoji
+ * is optional at every level (falls back to a locale flag, or DEFAULT_EMOJI
+ * when the browser exposes no region); names are optional (the plaque hides
+ * when empty), so replay/spectator modes work even though their emoji data is
+ * absent.
+ */
+export function portraitSpecs(
+  mode: PortraitMode,
+  session: Session,
+  wallX: number
+): PortraitSpec[] {
+  if (!mode.roomVisible) return []
+
+  // Spectators watch two other players; their own emoji/name are irrelevant
+  // and the watched players' emojis are not transported, so names come from
+  // the spectated fields and emojis fall back to the default TV.
+  if (session.spectator) {
+    return [
+      {
+        emoji: DEFAULT_EMOJI,
+        name: session.spectatedP1Name || undefined,
+        placement: plusXWall(wallX),
+      },
+      {
+        emoji: DEFAULT_EMOJI,
+        name: session.spectatedP2Name || undefined,
+        placement: minusXWall(wallX),
+      },
+    ]
+  }
+
+  // Replay never records a player emoji, so both players show a globe.
+  const myEmoji = mode.replay
+    ? GLOBE_EMOJI
+    : session.customParams["emoji"] || localeFlagEmoji()
+  const mine: PortraitSpec = {
+    emoji: myEmoji,
+    name: plaqueName(session.playername),
+    clubPlaque: clubFromQuery().length > 0,
+    placement: plusXWall(wallX),
+  }
+  if (mode.singlePlayer) return [mine]
+
+  // Live two-player: swap walls so my portrait is on the −X wall and the
+  // opponent on the +X wall.
+  return [
+    { ...mine, placement: minusXWall(wallX) },
+    {
+      emoji: mode.replay
+        ? GLOBE_EMOJI
+        : session.opponentParams["emoji"] || localeFlagEmoji(),
+      name: session.opponentName || undefined,
+      placement: plusXWall(wallX),
+    },
+  ]
+}
+
+/**
+ * Builds and owns the game's portraits. `refresh()` re-reads Session so
+ * late-arriving names (replay players, spectated players) appear without
+ * rebuilding the meshes.
+ */
+export class Portraits {
+  readonly list: Portrait[]
+
+  constructor(
+    scene: Scene,
+    private readonly mode: PortraitMode,
+    private readonly wallX: number
+  ) {
+    this.list = portraitSpecs(mode, Session.getInstance(), wallX).map(
+      (spec) =>
+        new Portrait(scene, {
+          emoji: spec.emoji,
+          name: spec.name,
+          position: spec.placement.position,
+          orientation: spec.placement.orientation,
+          scale: spec.scale ?? PORTRAIT_SCALE,
+          clubPlaque: spec.clubPlaque,
+        })
+    )
+  }
+
+  refresh(): void {
+    const specs = portraitSpecs(this.mode, Session.getInstance(), this.wallX)
+    specs.forEach((spec, i) => {
+      this.list[i]?.setState({ emoji: spec.emoji, name: spec.name ?? "" })
+    })
+  }
+}

@@ -1,0 +1,166 @@
+import { BeginEvent, Controller } from "./controller"
+import { Init } from "./init"
+import { Container } from "../container/container"
+import { MatchResult, MatchResultHelper } from "../network/client/matchresult"
+import { Session } from "../network/client/session"
+import { ResumeStore } from "../utils/resumestore"
+import { BreakEvent } from "../events/breakevent"
+import { Replay } from "./replay"
+import { isFirstShot } from "../utils/utils"
+
+async function submitResults(
+  container: Container,
+  result: MatchResult
+): Promise<void> {
+  const scoreReporter = container.scoreReporter
+  const session = Session.getInstance()
+  if (!scoreReporter) return
+
+  const uploadsArenaResult = !!session.tournamentId && !!result.winnerId
+
+  // Keep the "Back to Arena" button inert for the whole upload — the scoreboard
+  // post first, then the arena result — so a click can't navigate away and
+  // cancel either. Only the uploading client runs this.
+  if (uploadsArenaResult) {
+    scoreReporter.setArenaButtonUploading(true)
+  }
+  try {
+    // A game with no shots recorded has nothing worth posting to the
+    // scoreboard, so skip that upload silently. Tournament results still go
+    // through so brackets keep advancing on instant forfeits/disconnects.
+    if (!isFirstShot(container.recorder)) {
+      await scoreReporter.submitMatchResult(result)
+    }
+    if (!uploadsArenaResult) {
+      return
+    }
+
+    const challengeId =
+      Session.isBotMode() && session.tableId === "default"
+        ? `G_${Date.now().toString()}`
+        : session.tableId
+
+    await scoreReporter.submitTournamentResult(
+      session.tournamentId!,
+      challengeId,
+      result.winnerId!,
+      result.loserId,
+      result.winnerId?.startsWith("bot-") ? undefined : result.berserk
+    )
+  } finally {
+    if (uploadsArenaResult) {
+      scoreReporter.setArenaButtonUploading(false)
+    }
+  }
+}
+
+const LOBBY_LEAVE_DELAY_MS = 60 * 1000
+
+/** Tells an embedding page (the sagu challenge) that a speedrun finished. */
+function postSpeedrunResult(
+  container: Container,
+  result: MatchResult | undefined
+): void {
+  if (
+    !Session.isSpeedrunMode() ||
+    !result ||
+    !MatchResultHelper.isWinner(result)
+  ) {
+    return
+  }
+  const replayUrl = container.linkFormatter.getReplayUri(
+    container.recorder.wholeGame()
+  )
+  globalThis.parent?.postMessage(
+    {
+      type: "speedrun-result",
+      status: "complete",
+      matchResult: result,
+      replayUrl,
+      replayData:
+        result.replayData ?? container.recorder.getWholeGameCompressedSafe(),
+      // The winning break is still on the rules object here: end of game is
+      // resolved before startTurn() clears it.
+      break: container.rules.currentBreak,
+      score: Session.getInstance().myScore(),
+    },
+    "*"
+  )
+}
+
+export class End extends Controller {
+  override get name(): string {
+    return "End"
+  }
+
+  private readonly result?: MatchResult
+
+  constructor(container: Container, result?: MatchResult) {
+    super(container)
+    this.result = result
+  }
+
+  override onFirst(): void {
+    ResumeStore.clear()
+    const isDiagram = this.container.id === "diagram"
+    this.container.view.camera.forceMode(
+      isDiagram
+        ? this.container.view.camera.topView
+        : this.container.view.camera.orbitView
+    )
+    this.container.menu?.setConcedeVisible(false)
+    console.log("result:", this.result)
+    if (isDiagram) {
+      return
+    }
+    if (
+      this.result &&
+      this.container.scoreReporter &&
+      (MatchResultHelper.isWinner(this.result) ||
+        this.container.isSinglePlayer ||
+        Session.isBotMode())
+    ) {
+      if (!this.result.replayData) {
+        this.result.replayData =
+          this.container.recorder.getWholeGameCompressedSafe()
+      }
+      void submitResults(this.container, this.result)
+    }
+    this.container.lobbyIndicator.setTableId(undefined)
+    this.container.lobbyIndicator.scheduleLeave(LOBBY_LEAVE_DELAY_MS)
+
+    const wasBotWin = !this.result && Session.isBotMode()
+    if (wasBotWin) {
+      return
+    }
+
+    if (!this.result || MatchResultHelper.isWinner(this.result)) {
+      this.container.particles.initParticles(this.container.view.scene)
+    }
+
+    const highBreaks = MatchResultHelper.getHighBreaks(this.container)
+    this.container.notification?.updateHighBreaks(highBreaks)
+
+    postSpeedrunResult(this.container, this.result)
+  }
+
+  override handleBegin(_: BeginEvent): Controller {
+    this.container.particles.dispose()
+    return new Init(this.container)
+  }
+
+  override handleBreak(event: BreakEvent): Controller {
+    if (event.init) {
+      this.container.table.updateFromShortSerialised(event.init)
+      return new Replay(
+        this.container,
+        event.init,
+        event.shots,
+        false,
+        1000,
+        event.diagram
+      )
+    }
+    return this
+  }
+}
