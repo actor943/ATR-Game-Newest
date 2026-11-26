@@ -1,0 +1,51 @@
+/* ATR Game 0.5 — 3D 台球本地化覆盖层。
+   上游 billiards 网页右上角那个 "Anon" 胶囊是联机大厅入口，会跳到
+   https://billiards.tailuge.workers.dev/lobby。应用里既不用联机，也用不上
+   外部资源；点击它还会触发 WebView 的「台球资源加载失败」弹窗。这里直接
+   从界面上移除，不动上游脚本，避免 JS 因找不到节点而报错。 */
+#lobbyOverlay,
+#lobbyOverlay .lobby-count {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* 语言切换按钮：放在右上角（原本 Anon 的位置），所有平台都在游戏内可见。 */
+#atrLangToggle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3000;
+  min-width: 46px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 16px;
+  background: rgba(12, 28, 22, 0.78);
+  color: #ffffff;
+  font: 600 13px/1 system-ui, -apple-system, "PingFang SC", sans-serif;
+  cursor: pointer;
+}
+#atrLangToggle:hover {
+  background: rgba(12, 28, 22, 0.95);
+}
+
+/* Windows / Linux 无边框跟随窗口的返回键：关掉子窗口，回到 Flet 主界面。
+   内嵌平台不会出现 pywebview，这个按钮不会被创建。 */
+#atrStandaloneBack {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 3001;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 16px;
+  background: rgba(12, 28, 22, 0.78);
+  color: #ffffff;
+  font: 600 13px/1 system-ui, -apple-system, "PingFang SC", sans-serif;
+  cursor: pointer;
+}
+#atrStandaloneBack:hover {
+  background: rgba(12, 28, 22, 0.95);
+}

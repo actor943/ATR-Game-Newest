@@ -34,6 +34,10 @@ def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
     def go_history(_e):
         open_history(navigate)      # 丢掉缓存，进来看的是最新记录
 
+    def go_replay(_e):
+        from games.guandan.views.replay_view import open_replay_list
+        open_replay_list(navigate)
+
     body = ft.Column(
         [
             ft.Text(t("guandan.choose_mode"), size=14,
@@ -99,6 +103,21 @@ def build(_page: ft.Page, navigate: NavigateFn) -> ft.Control:
                         description=t("guandan.advisor_desc"),
                         icon="🤖",
                         available=False,
+                    ),
+                ],
+                ideal_w=300, spacing=12, max_cols=4,
+            ),
+            ft.Container(height=12),
+            # 第四行：对局回放（0.5 新增，四家明牌逐帧复盘）
+            grid_cards(
+                _page,
+                [
+                    menu_card(
+                        title="对局回放",
+                        description="选一局已保存的对局，用同一张牌桌逐帧复盘，四家手牌全部明着。",
+                        icon="▶️",
+                        available=True,
+                        on_click=go_replay,
                     ),
                 ],
                 ideal_w=300, spacing=12, max_cols=4,

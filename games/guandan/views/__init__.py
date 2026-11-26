@@ -3,6 +3,7 @@
 from .home_view import build as build_home
 from .play_view import build as build_play
 from .history_view import build as build_history
+from .replay_view import build_replay, build_replay_play
 from .board_view import build as build_board
 from .advisor_view import build as build_advisor
 from .simulator_view import build as build_simulator

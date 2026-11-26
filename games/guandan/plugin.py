@@ -47,6 +47,19 @@ plugin = GamePlugin(
             group="guandan",
             title_key="guandan.history",
         ),
+        # 0.5 新增：选局回放 + 逐帧明牌牌桌（与实时对局同一套 UI）
+        RouteSpec(
+            path="/g/guandan/replay",
+            title="对局回放",
+            builder=_views.build_replay,
+            group="guandan",
+        ),
+        RouteSpec(
+            path="/g/guandan/replay/play",
+            title="回放牌桌",
+            builder=_views.build_replay_play,
+            group="guandan",
+        ),
         RouteSpec(
             path="/g/guandan/board",
             title="快速记牌",

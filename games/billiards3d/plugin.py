@@ -22,8 +22,9 @@ def _play(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
 register_game(GamePlugin(
     id="billiards3d",
-    players=1,                    # 本地单人：网页自身支持机器人/多人，但不接入房间
-    online=False,
+    # 0.5：进入多人房间也能开 3D 台球，默认自由摆球（不进模式设置）
+    players=2,
+    online=True,
     menu_item=MenuItem(
         id="billiards3d",
         title="3D 台球",

@@ -343,6 +343,7 @@ class PlayActionsMixin:
         for line in tr.apply():
             self._log(line, LEVEL_GOLD)
         self.gift_marks = set(tr.received_gifts(me))
+        self._capture_replay("进贡完成")
 
     def _tribute_ai_step(self, tr) -> None:
         """电脑位自动完成当前进贡动作。"""

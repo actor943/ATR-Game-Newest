@@ -39,6 +39,10 @@ _GAMES = [
     ("sagu", "ruletype=sagu", "🏅", "Sagu"),
 ]
 
+# 多人游戏从房间进来不走模式设置，直接开自由摆球（练习模式）
+_FREE_PRACTICE_PARAMS = "ruletype=eightball&practice"
+_FREE_PRACTICE_NAME = "自由摆球"
+
 _IN_APP_PLATFORMS = {
     ft.PagePlatform.ANDROID,
     ft.PagePlatform.IOS,
@@ -48,6 +52,8 @@ _IN_APP_PLATFORMS = {
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # 每个 page 当前选择的规则：id(page) -> (params, title)
 _state: dict[int, tuple[str, str]] = {}
+# 多人 / 非内嵌平台：每次进对局只拉起一次独立窗口
+_standalone_launched: set[int] = set()
 
 
 def _can_embed(page: ft.Page) -> bool:
@@ -68,8 +74,13 @@ def _python_cmd() -> list[str]:
     return [sys.executable]
 
 
-def _launch_standalone(params: str, title: str) -> None:
+def _launch_standalone(params: str, title: str, *, page: ft.Page | None = None,
+                       follow: bool = False) -> None:
     cmd = [*_python_cmd(), "-m", "games.billiards3d.standalone", params, title]
+    if follow and page is not None:
+        # Windows / Linux：开无边框窗口并跟随主窗口，观感接近内嵌。
+        from .geometry import start as start_geometry
+        cmd += [start_geometry(page), "1"]
     try:
         subprocess.Popen(cmd, cwd=str(_PROJECT_ROOT))
     except OSError as exc:
@@ -107,6 +118,7 @@ def _pop_dialog() -> None:
 def build_home(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     """规则菜单：支持内嵌的平台进入全屏页，其余平台拉起独立窗口。"""
     _page_ref[id(page)] = page
+    _standalone_launched.discard(id(page))
 
     def _on_rule(params: str, name: str):
         def _handler(_e) -> None:
@@ -115,7 +127,8 @@ def build_home(page: ft.Page, navigate: NavigateFn) -> ft.Control:
                 navigate("/g/billiards3d/play")
                 return
             try:
-                _launch_standalone(params, f"3D 台球 · {name}")
+                _launch_standalone(params, f"3D 台球 · {name}",
+                                   page=page, follow=True)
             except Exception as exc:  # noqa: BLE001
                 page.show_dialog(ft.AlertDialog(
                     modal=True,
@@ -175,6 +188,8 @@ def build_home(page: ft.Page, navigate: NavigateFn) -> ft.Control:
 
 _overlay_ref: dict[int, ft.Control] = {}
 _prev_scroll: dict[int, object] = {}
+# 每个 page 只提示一次本地资源错误；外链失败不打扰用户
+_resource_warned: set[int] = set()
 
 
 def _detach_back(page: ft.Page) -> None:
@@ -190,10 +205,56 @@ def _detach_back(page: ft.Page) -> None:
 
 
 def build_play(page: ft.Page, navigate: NavigateFn) -> ft.Control:
-    """全屏台球页：WebView 直接作为根控件，返回键走 overlay。"""
+    """全屏台球页：WebView 直接作为根控件，返回键走 overlay。
+
+    0.5：多人房间点「开始」也走这里。房间内不做模式设置，一律直接进入
+    自由摆球（上游的 practice 模式），保证房主和客人的画面一致。
+    """
+    from core.net import session as _sess
+
+    in_room = _sess.current() is not None
     params, name = _state.get(id(page), ("", ""))
+    if in_room or not params:
+        params, name = _FREE_PRACTICE_PARAMS, _FREE_PRACTICE_NAME
+        _state[id(page)] = (params, name)
+
     if not _can_embed(page):
-        return build_home(page, navigate)
+        # Windows / Linux 没有内嵌 WebView：多人也照常把自由摆球开起来，
+        # 只是走独立原生窗口；这里留一个可返回的说明页，而不是打回菜单。
+        if not in_room:
+            return build_home(page, navigate)
+        pid = id(page)
+        if pid not in _standalone_launched:
+            _standalone_launched.add(pid)
+            try:
+                _launch_standalone(params, f"3D 台球 · {name}",
+                                   page=page, follow=True)
+            except Exception as exc:                  # noqa: BLE001
+                _standalone_launched.discard(pid)
+                return ft.Column(
+                    [
+                        app_bar("3D 台球", on_back=lambda _e: navigate("/room")),
+                        page_padding(ft.Text(str(exc), size=13)),
+                    ],
+                    expand=True,
+                )
+        return ft.Column(
+            [
+                app_bar("3D 台球 · 自由摆球",
+                        on_back=lambda _e: navigate("/room")),
+                page_padding(ft.Column(
+                    [
+                        ft.Text("已在独立窗口打开 3D 台球（自由摆球）。",
+                                size=14),
+                        ft.Container(height=8),
+                        ft.Text("多人房间保持连接；返回这里可回到房间。",
+                                size=12, color=T.TEXT_MUTED),
+                    ],
+                    spacing=0,
+                )),
+            ],
+            expand=True,
+        )
 
     # 真实 App 在 app.run 里把 page.scroll 设成了 AUTO；WebView 作为可滚动
     # 页面的子控件在 macOS 上会拿到零高度，表现就是整页白屏。进游戏时临时
@@ -205,11 +266,12 @@ def build_play(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     def _back(_e) -> None:
         from core.router import Router
         _detach_back(page)
+        _resource_warned.discard(id(page))
         page.scroll = _prev_scroll.pop(id(page), ft.ScrollMode.AUTO)
         page.update()
         if Router.current is not None:
             Router.current.invalidate("/g/billiards3d/play")
-        navigate("/g/billiards3d")
+        navigate("/room" if in_room else "/g/billiards3d")
 
     # 返回键不能和 WebView 一起放进 Stack：实测那样动态加入后原生 WebView
     # 收不到 load_request。挂 page.overlay 不影响导航，也不会出现 Flet 顶栏。
@@ -217,7 +279,8 @@ def build_play(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     back = ft.Container(
         content=ft.IconButton(
             icon=ft.Icons.ARROW_BACK,
-            tooltip=t("billiards3d.back", default="返回规则菜单"),
+            tooltip=("返回房间" if in_room else
+                     t("billiards3d.back", default="返回规则菜单")),
             on_click=_back,
             bgcolor=T.SURFACE,
         ),
@@ -228,20 +291,36 @@ def build_play(page: ft.Page, navigate: NavigateFn) -> ft.Control:
     page.overlay.append(back)
 
     def _resource_error(e) -> None:
+        data = str(getattr(e, "data", e))
+        # 上游网页里有 Google 字体、About 外链等：离线时必然报错，但游戏
+        # 本身完全跑本地资源，不该让用户看到「台球资源加载失败」弹窗。
+        if "127.0.0.1" not in data and not data.startswith("/"):
+            return
+        pid = id(page)
+        if pid in _resource_warned:
+            return
+        _resource_warned.add(pid)
+
+        def _close(_e):
+            _pop_dialog()
+            _resource_warned.discard(pid)
+
         try:
             page.show_dialog(ft.AlertDialog(
                 modal=True,
                 title=ft.Text(t("billiards3d.load_failed", default="资源加载失败")),
-                content=ft.Text(str(getattr(e, "data", e)), size=12),
-                actions=[ft.Button("OK", on_click=lambda _e: _pop_dialog())],
+                content=ft.Text(data, size=12),
+                actions=[ft.Button("OK", on_click=_close)],
             ))
         except Exception:  # noqa: BLE001
-            pass
+            _resource_warned.discard(pid)
 
     url = game_url(params)
     webview = WebView(
         url=url,
         expand=True,
+        # 右上角 Anon 胶囊已用 CSS 隐藏；再拦一层，防止误触跳到外网大厅。
+        prevent_links=["https://billiards.tailuge.workers.dev/"],
         on_web_resource_error=_resource_error,
     )
 

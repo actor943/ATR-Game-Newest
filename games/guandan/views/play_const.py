@@ -49,6 +49,14 @@ PLAY_W, PLAY_H = 38, 53
 HAND_SPACING = -16
 LIFT = -0.30                   # 选中牌的抬升偏移
 
+# 0.5 牌桌视角：绿呢桌面 + 四方位席位（对标斗地主 / 掼蛋客户端）
+TABLE_FELT = "#103B2E"
+TABLE_FELT_EDGE = "#2D6A4F"
+TABLE_CENTER = "#174A38"
+SEAT_PANEL = "#1B4D3E"
+SEAT_PANEL_ACTIVE = "#296651"
+OPP_CARD_SCALE = 0.62          # 对手手牌相对我方手牌的大小
+
 MAX_EVENTS = 5000             # 出牌记录全量保留（TextSpan 很轻，见 0.4.3）
 EVENTS_HEIGHT = 180           # 事件窗口高度；内部可滚动看全部记录
 HAND_BOX_HEIGHT = 150         # 手牌/进贡面板高度（进贡面板要放提示+牌+按钮）

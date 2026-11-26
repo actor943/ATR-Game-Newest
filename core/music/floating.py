@@ -57,6 +57,11 @@ class FloatingPlayer:
         self.expanded = False
         self.x = 24.0
         self.y = 92.0
+        # 收起后的音符按钮位置：默认在左上偏下，避开右上角（3D 台球语言
+        # 按钮）和左上角（台球返回键），用户可在窗口内任意拖动并记住位置。
+        self.handle_x: Optional[float] = None
+        self.handle_y: Optional[float] = None
+        self._handle_dragged = False
         self._dirty = False
         self._scrubbing = False
         self._task: Optional[asyncio.Task] = None
@@ -209,9 +214,14 @@ class FloatingPlayer:
             width=42, height=42,
             border_radius=21,
             alignment=ft.Alignment.CENTER,
-            content=ft.Text("🎵", size=19),
+            content=ft.GestureDetector(
+                content=ft.Text("🎵", size=19),
+                on_pan_start=self._on_handle_pan_start,
+                on_pan_update=self._on_handle_pan_update,
+                on_pan_end=self._on_handle_pan_end,
+                on_tap=self._on_handle_click,
+            ),
             ink=True,
-            on_click=self._on_handle_click,
             visible=not self.visible,
         )
         self._refresh()
@@ -325,6 +335,7 @@ class FloatingPlayer:
     def _on_resize(self, _w: float, _h: float) -> None:
         self._dirty = True
         self._clamp_position()
+        self._clamp_handle()
 
     async def _tick(self) -> None:
         """后台心跳：自动下一首 + 进度刷新（0.5 秒一次）。"""
@@ -426,12 +437,11 @@ class FloatingPlayer:
         self.root.width = min(self.EXPANDED_W if self.expanded
                               else self.COMPACT_W,
                               max(200, responsive.page_width(self.page) - 24))
-        # 收起状态：右上角留一个音符按钮，任何页面（含全屏对局）都能点开
+        # 收起状态：留一个可拖动的音符按钮，任何页面（含全屏对局）都能点开
         self.handle.visible = not self.visible
         self.handle.bgcolor = T.SURFACE
         self.handle.border = ft.Border.all(1, T.PRIMARY)
-        self.handle.left = max(0.0, responsive.page_width(self.page) - 58)
-        self.handle.top = 16.0
+        self._clamp_handle()
         play_tip = t("music.play" if not (
             self.player.playing and not self.player.paused) else "music.pause")
         expand_tip = t("music.expand" if not self.expanded
@@ -467,6 +477,40 @@ class FloatingPlayer:
         self.x = min(max(0.0, self.x), max(0.0, pw - width - 8))
         self.y = min(max(0.0, self.y), max(0.0, ph - height - 8))
         self.root.left, self.root.top = self.x, self.y
+
+    # ---------------- 收起后的音符按钮 ----------------
+
+    def _load_handle_pos(self) -> tuple[float, float]:
+        """读上次拖到的位置；默认左上偏下，避开台球的返回键与语言按钮。"""
+        try:
+            from core.settings import Settings
+            saved = (Settings.load().data or {}).get("music_handle_pos") or {}
+            return float(saved.get("x", 16.0)), float(saved.get("y", 64.0))
+        except (TypeError, ValueError, OSError):
+            return 16.0, 64.0
+
+    def _persist_handle_pos(self) -> None:
+        try:
+            from core.settings import Settings
+            settings = Settings.load()
+            data = dict(settings.data or {})
+            data["music_handle_pos"] = {
+                "x": round(self.handle_x or 16.0, 1),
+                "y": round(self.handle_y or 64.0, 1),
+            }
+            settings.data = data
+            settings.save()
+        except Exception:                           # noqa: BLE001
+            pass
+
+    def _clamp_handle(self) -> None:
+        """把音符按钮限制在窗口内（窗口缩小时也不会跑出去）。"""
+        if self.handle_x is None or self.handle_y is None:
+            self.handle_x, self.handle_y = self._load_handle_pos()
+        pw, ph = responsive.size(self.page)
+        self.handle_x = min(max(0.0, self.handle_x), max(0.0, pw - 42 - 8))
+        self.handle_y = min(max(0.0, self.handle_y), max(0.0, ph - 42 - 8))
+        self.handle.left, self.handle.top = self.handle_x, self.handle_y
 
     def _update(self) -> None:
         try:
@@ -518,8 +562,34 @@ class FloatingPlayer:
         self.hide()
 
     def _on_handle_click(self, _e=None) -> None:
-        """点右上角音符：在任何游戏页都能重新展开播放器。"""
+        """点音符：在任何游戏页都能重新展开播放器（拖动后不误触）。"""
+        if self._handle_dragged:
+            self._handle_dragged = False
+            return
         self.show(expanded=True)
+
+    def _on_handle_pan_start(self, _e=None) -> None:
+        self._handle_dragged = False
+        self._clamp_handle()
+
+    def _on_handle_pan_update(self, e) -> None:
+        delta = getattr(e, "local_delta", None) or getattr(
+            e, "global_delta", None)
+        dx = _offset(delta, "x", "dx")
+        dy = _offset(delta, "y", "dy")
+        if abs(dx) + abs(dy) > 1.0:
+            self._handle_dragged = True
+        pw, ph = responsive.size(self.page)
+        self.handle_x = min(max(0.0, (self.handle_x or 0.0) + dx),
+                            max(0.0, pw - 42 - 8))
+        self.handle_y = min(max(0.0, (self.handle_y or 0.0) + dy),
+                            max(0.0, ph - 42 - 8))
+        self.handle.left, self.handle.top = self.handle_x, self.handle_y
+        self._update()
+
+    def _on_handle_pan_end(self, _e=None) -> None:
+        if self._handle_dragged:
+            self._persist_handle_pos()
 
     def _on_seek_start(self, _e=None) -> None:
         self._scrubbing = True

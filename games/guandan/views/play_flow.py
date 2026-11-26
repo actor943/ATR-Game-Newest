@@ -12,6 +12,7 @@ from core import history
 from core.net import session as _sess
 from core.theme import T
 from games.guandan.engine import Hand, settle
+from games.guandan.replay import save_replay
 from games.guandan.views.history_view import open_history
 from games.guandan.views.play_const import (
     BOMB_COLOR,
@@ -55,7 +56,11 @@ class PlayFlowMixin:
                     self._log(
                         f"下一手进贡：{_plan_summary(plan)}", LEVEL_GOLD)
             self.selected.clear()
+        # 新的一轮开始：清掉留在各家席位旁的「最近一手」
+        if not self.hand.ended and self.hand.current is None:
+            self.last_plays.clear()
         self._refresh()
+        self._capture_replay("本局结束" if self.hand.ended else "跟牌")
 
     def _save_match_log(self, finished: bool = True) -> None:
         """把这一场的完整出牌记录落盘到应用数据目录。
@@ -73,24 +78,38 @@ class PlayFlowMixin:
             f"◆ 记录结束：{state} · 打完 {self.match.hand_no} 局 · "
             f"级数 {self.match.levels[0]}/{self.match.levels[1]}",
         ]
+        meta = {
+            "状态": state,
+            "胜方": winner,
+            "局数": self.match.hand_no,
+            "级数": f"{self.match.levels[0]}/{self.match.levels[1]}",
+            "座位": self._seat_summary(),
+        }
         try:
-            path = history.save_match_log(
-                "guandan", lines,
-                meta={
-                    "状态": state,
-                    "胜方": winner,
-                    "局数": self.match.hand_no,
-                    "级数": f"{self.match.levels[0]}/{self.match.levels[1]}",
-                    "座位": self._seat_summary(),
-                },
-            )
+            path = history.save_match_log("guandan", lines, meta=meta)
         except Exception as e:                      # noqa: BLE001
             self._log(f"保存出牌记录失败：{e}", BOMB_COLOR)
             return
-        if path and str(path):
-            self._log(f"出牌记录已保存：{path}", MUTED)
-        else:
+        if not path or not str(path):
             self._log("出牌记录保存失败（数据目录不可写？）", BOMB_COLOR)
+            return
+        self._log(f"出牌记录已保存：{path}", MUTED)
+        # 同一场里的结构化帧与文本日志同主名落盘，历史页据此提供回放入口
+        if getattr(self, "_replay_saved", False):
+            return
+        self._replay_saved = True
+        rp = save_replay(
+            path, self.replay, meta=meta,
+            logs=lines,
+            log_meta=[*self._log_meta, (MUTED, False)],
+            seats=list(self.cfg.seats),
+            local_seat=self.cfg.local_seat,
+            controllers=[self._controller(p) for p in range(4)],
+        )
+        self._log(
+            (f"对局回放已保存：{rp}" if rp and str(rp)
+             else "对局回放保存失败（旧记录仍可看文字版）"), MUTED,
+        )
 
     def _in_progress(self) -> bool:
         """当前是否还有没打完的对局（整场结束 / 已分胜负就不算）。"""
@@ -180,6 +199,7 @@ class PlayFlowMixin:
         self.selected.clear()
         self.tribute_sel.clear()
         self.gift_marks.clear()          # 上一轮进贡得来的标记只管那一轮
+        self.last_plays.clear()          # 新一手，各家席位旁的牌清掉
         self._log(f"── 第 {self.match.hand_no + 1} 局 ──", HEAD_COLOR, bold=True)
         tr = self.hand.tribute
         if tr is not None and (tr.active or tr.refused):
@@ -189,6 +209,7 @@ class PlayFlowMixin:
                 self._log(f"抗贡不换牌，由{NAMES[self.hand.turn]}先出",
                           HEAD_COLOR)
         self._refresh()
+        self._capture_replay("下一局发牌")
         self._start_ai()
         self._push_state()
 

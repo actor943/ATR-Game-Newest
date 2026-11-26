@@ -96,7 +96,8 @@ class PlayAiMixin:
                       WIN_COLOR, bold=True)
 
     def _log_play(self, seat: int, combo, bomb: bool):
-        """出牌日志：牌型 + 队色；用了逢人配时追加「当什么用、原本是谁的」。"""
+        """出牌日志 + 留在席位旁的最近一手（回放帧也录它）。"""
+        self.last_plays[seat] = combo
         note = combo_wild_note(combo.cards, self.hand.ctx,
                                self.cfg.team_of(seat), combo)
         self._log(f"{NAMES[seat]} 出 {combo}" + (f"    {note}" if note else ""),

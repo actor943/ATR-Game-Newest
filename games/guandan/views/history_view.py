@@ -22,6 +22,7 @@ from typing import Dict
 from core import history_view as _hv
 from core.i18n import t
 from core.registry import NavigateFn
+from core.theme import T
 
 GAME_ID = "guandan"
 HISTORY_PATH = "/g/guandan/history"
@@ -52,11 +53,32 @@ def _summary(path: Path, meta: Dict[str, str]) -> str:
     return " · ".join(parts)
 
 
+def _extra_actions(history_page):
+    """历史页顶栏加一个「对局回放」入口（有帧数据才看得到）。"""
+    def go(_e):
+        from games.guandan.views.replay_view import open_replay_list
+        open_replay_list(history_page.navigate)
+
+    return [
+        ft.TextButton(
+            content=ft.Row(
+                [ft.Icon(ft.Icons.PLAY_ARROW, size=16,
+                         color=T.TEXT_PRIMARY),
+                 ft.Text("对局回放", size=12, color=T.TEXT_PRIMARY)],
+                spacing=4, tight=True,
+            ),
+            on_click=go,
+            tooltip="逐帧明牌回看已保存的对局",
+        ),
+    ]
+
+
 def build(page, navigate: NavigateFn) -> ft.Control:
     """掼蛋历史记录页（委托给通用历史页，按 guandan 字段定制摘要）。"""
     return _hv.build_history(
         page, navigate, game_id=GAME_ID, title=t("guandan.history"),
-        back_route="/g/guandan", summary_fn=_summary)
+        back_route="/g/guandan", summary_fn=_summary,
+        extra_actions=_extra_actions)
 
 
 def open_history(navigate: NavigateFn) -> None:

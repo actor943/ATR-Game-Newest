@@ -51,12 +51,12 @@ import flet as ft
 
 from core.registry import NavigateFn
 from core.theme import T
-from core.ui_common import app_bar
 from core.profile import ensure_nick
 from core.net import session as _sess
 from games.guandan import config as cfgmod
 from games.guandan.cards import Card
 from games.guandan.engine import Hand, MatchState, new_match
+from games.guandan.replay import ReplayRecorder
 from games.guandan.views.play_actions import PlayActionsMixin
 from games.guandan.views.play_ai import PlayAiMixin
 from games.guandan.views.play_const import (
@@ -68,7 +68,7 @@ from games.guandan.views.play_const import (
 )
 from games.guandan.views.play_flow import PlayFlowMixin
 from games.guandan.views.play_net import PlayNetMixin
-from games.guandan.views.play_table import PlayTableMixin
+from games.guandan.views.play_table import PlayTableMixin, build_table_screen
 
 class _Play(PlayNetMixin, PlayAiMixin, PlayActionsMixin,
             PlayTableMixin, PlayFlowMixin):
@@ -116,6 +116,9 @@ class _Play(PlayNetMixin, PlayAiMixin, PlayActionsMixin,
         self._log_sent = 0                  # 房主：已随快照发出去的日志条数
         self._log_have = 0                  # 客人：已收到的日志条数（对齐用）
         self._log_saved = False        # 这一场是否已经落盘（防止重复写文件）
+        self._replay_saved = False     # 回放文件只写一次
+        self.replay = ReplayRecorder()  # 逐帧局面（含四家手牌，供赛后回放）
+        self.last_plays: Dict[int, object] = {}  # 各家留在席位旁的最近一手
         self._ai_task = None
 
         # ---- 界面引用 ----
@@ -159,118 +162,40 @@ class _Play(PlayNetMixin, PlayAiMixin, PlayActionsMixin,
     # ============================================================
 
     def build(self) -> ft.Control:
-        events_box = ft.Container(
-            content=self.events_inner,
-            height=self.m["events"],
-            clip_behavior=ft.ClipBehavior.HARD_EDGE,
-            opacity=1.0, animate_opacity=0, animate_size=0,
-        )
-        events_section = ft.Container(
-            bgcolor=T.SURFACE,
-            border=ft.Border.all(1, T.BORDER),
-            border_radius=8,
-            padding=ft.Padding.all(10),
-            content=ft.Column(
-                [ft.Text("── 近期事件 ──", size=11, color=MUTED),
-                 ft.Container(height=4),
-                 events_box],
-                spacing=0,
-            ),
-        )
-
-        top_bar = ft.Container(
-            bgcolor=T.SURFACE,
-            border=ft.Border.all(1, T.BORDER),
-            border_radius=8,
-            padding=ft.Padding.all(12),
-            content=ft.Row(
-                [
-                    ft.Column(
-                        [self.score_text, self.level_note, self.net_text],
-                        spacing=2, expand=True,
-                    ),
-                    self.turn_text,
-                ],
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-        )
-
-        table_box = ft.Container(
-            bgcolor=T.SURFACE,
-            border=ft.Border.all(1, T.BORDER),
-            border_radius=8,
-            padding=ft.Padding.all(10),
-            content=ft.Column(
-                [self.seat_row, ft.Container(height=8), self.target_box],
-                spacing=0,
-            ),
-        )
-
-        self.hand_box = ft.Container(
-            bgcolor=T.SURFACE,
-            border=ft.Border.all(1, T.BORDER),
-            border_radius=8,
-            padding=ft.Padding.symmetric(horizontal=10, vertical=8),
-            height=self.m["hand_box"],
-            clip_behavior=ft.ClipBehavior.HARD_EDGE,
-            content=self.my_hand_col,
-        )
-
         actions = ft.Row(
             [self.play_btn, self.pass_btn, self.clear_btn,
              ft.Container(expand=True), self.hint_text],
             spacing=10,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
-
-        body = ft.Column(
-            [
-                top_bar,
-                ft.Container(height=8),
-                table_box,
-                ft.Container(height=8),
-                self.result_box,
-                self.hand_box,
-                ft.Container(height=8),
-                actions,
-                ft.Container(height=8),
-                events_section,
-            ],
-            spacing=0,
-            # 手机上竖直空间不够（手牌可能换成多行），整页可滚，保证都能看到
-            scroll=ft.ScrollMode.AUTO,
-        )
-
-        view = ft.Column(
-            [
-                app_bar(
-                    "对局",
-                    on_back=self._on_back,
-                    actions=[
-                        ft.TextButton(
-                            content=ft.Row(
-                                [
-                                    ft.Icon(ft.Icons.HISTORY, size=16,
-                                            color=T.TEXT_PRIMARY),
-                                    ft.Text("历史记录", size=12,
-                                            color=T.TEXT_PRIMARY),
-                                ],
-                                spacing=4, tight=True,
-                            ),
-                            on_click=self._on_history,
-                            tooltip="查看往期出牌记录",
-                        ),
-                    ],
+        app_actions = [
+            ft.TextButton(
+                content=ft.Row(
+                    [ft.Icon(ft.Icons.HISTORY, size=16,
+                             color=T.TEXT_PRIMARY),
+                     ft.Text("历史记录", size=12, color=T.TEXT_PRIMARY)],
+                    spacing=4, tight=True,
                 ),
-                ft.Container(
-                    padding=ft.Padding.all(12),
-                    content=body,
-                    expand=True,
+                on_click=self._on_history,
+                tooltip="查看往期出牌记录",
+            ),
+            ft.TextButton(
+                content=ft.Row(
+                    [ft.Icon(ft.Icons.PLAY_ARROW, size=16,
+                             color=T.TEXT_PRIMARY),
+                     ft.Text("对局回放", size=12, color=T.TEXT_PRIMARY)],
+                    spacing=4, tight=True,
                 ),
-            ],
-            expand=True,
+                on_click=self._on_replay,
+                tooltip="明牌回看已保存的对局",
+            ),
+        ]
+        view = build_table_screen(
+            self, actions=actions, title="对局",
+            on_back=self._on_back, app_actions=app_actions,
         )
         self._log(f"对局开始：{self._seat_summary()}", HEAD_COLOR, bold=True)
+        self._capture_replay("发牌")
         if self.net is not None:
             # 联机：接管会话的玩法消息；房主当即推牌，客人向房主要牌。
             # 整段兜底：网络/序列化任何一环出错都只影响联机，不能把牌桌页
@@ -316,8 +241,12 @@ class _Play(PlayNetMixin, PlayAiMixin, PlayActionsMixin,
         self.turn_text.color = MUTED
         self.net_text.value = "正在与房主同步局面…"
         self.net_text.color = MUTED
-        self.seat_row.controls = [
-            ft.Text("等待房主发牌…", size=12, color=MUTED)]
+        if getattr(self, "seat_panels", None):
+            for panel in self.seat_panels:
+                panel.content = ft.Text("等待发牌…", size=11, color=MUTED)
+        else:
+            self.seat_row.controls = [
+                ft.Text("等待房主发牌…", size=12, color=MUTED)]
         self.target_box.content = ft.Container()
         self.my_hand_col.controls = [
             ft.Text("正在与房主同步局面…", size=13, color=MUTED)]
@@ -329,6 +258,30 @@ class _Play(PlayNetMixin, PlayAiMixin, PlayActionsMixin,
         self.clear_btn.disabled = True
         self.page.update()
 
+
+    def _on_replay(self, _e):
+        """顶栏「对局回放」：先收尾本场，再去回放列表。"""
+        from games.guandan.views.replay_view import open_replay_list
+
+        def go():
+            open_replay_list(self.navigate)
+
+        if self._in_progress():
+            self._confirm_leave(go)
+            return
+        self._save_match_log(False)
+        self.alive = False
+        self._detach_net()
+        go()
+
+    def _capture_replay(self, label: str) -> None:
+        """录一帧（联机客人不录：房主是唯一权威，快照本来就齐）。"""
+        if self.net is not None and not self.is_host:
+            return
+        self.replay.capture(
+            self.match, self.hand, self.result, label,
+            len(self._log_lines), self.last_plays,
+        )
 
     # ============================================================
     # 生命周期辅助

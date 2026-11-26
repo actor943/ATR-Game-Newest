@@ -50,7 +50,7 @@ STRINGS: dict[str, str] = {
     "menu.multiplayer_desc": "Host a room on the same WiFi, with voice chat",
     "menu.history": "Match History",
     "menu.history_desc": "Every game you have played, all in one place",
-    "menu.footer": "v0.4.10 · LAN multiplayer",
+    "menu.footer": "v0.5 · LAN multiplayer",
 
     # ---------------- single player ----------------
     "single.title": "Single Player",

@@ -129,6 +129,8 @@
     <link rel="stylesheet" type="text/css" href="css/lobby.css" />
     <link rel="stylesheet" type="text/css" href="css/menu.css" />
     <link rel="stylesheet" type="text/css" href="css/wood.css" />
+    <!-- ATR Game 0.5：隐藏上游联机大厅胶囊（Anon），并放好语言切换按钮 -->
+    <link rel="stylesheet" type="text/css" href="atr-overrides.css" />
   </head>
 
   <body>
@@ -931,5 +933,33 @@
     <script defer src="three_examples.js"></script>
     <script defer src="messaging.js"></script>
     <script defer src="index.js"></script>
+    <!-- ATR Game 0.5：默认简体中文 + 游戏内语言切换；必须在游戏脚本之后 -->
+    <script defer src="atr_i18n.js"></script>
+    <!-- Windows / Linux 独立窗口：等 pywebview 桥就绪后定时跟随主窗口，
+         并给一个「返回游戏」按钮关闭子窗口。内嵌平台无 pywebview，自动跳过。 -->
+    <script>
+      (function () {
+        var tries = 0;
+        function attach() {
+          var api = window.pywebview && window.pywebview.api;
+          if (!api || typeof api.atr_sync !== 'function') {
+            if (++tries < 100) setTimeout(attach, 300);
+            return;
+          }
+          api.atr_sync();
+          setInterval(function () { api.atr_sync(); }, 250);
+          if (!document.getElementById('atrStandaloneBack')) {
+            var btn = document.createElement('button');
+            btn.id = 'atrStandaloneBack';
+            btn.type = 'button';
+            btn.textContent = '\u8fd4\u56de\u6e38\u620f';
+            btn.addEventListener('click', function () { api.atr_close(); });
+            document.body.appendChild(btn);
+          }
+        }
+        document.addEventListener('DOMContentLoaded', attach);
+        setTimeout(attach, 300);
+      })();
+    </script>
   </body>
 </html>

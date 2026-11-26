@@ -32,7 +32,7 @@ from core.views import (
 
 # 应用名（窗口标题 / Dock / 设置目录都用它）
 APP_NAME = "ATR Game"
-APP_VERSION = "0.4.10"
+APP_VERSION = "0.5"
 
 
 def _register_core_routes() -> None:

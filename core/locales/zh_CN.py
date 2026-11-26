@@ -61,7 +61,7 @@ STRINGS: dict[str, str] = {
     "menu.multiplayer_desc": "同一 WiFi 下开房间一起玩，带语音",
     "menu.history": "游玩记录",
     "menu.history_desc": "所有游戏玩过的历史记录都在这儿",
-    "menu.footer": "v0.4.10 · 支持局域网联机",
+    "menu.footer": "v0.5 · 支持局域网联机",
 
     # ---------------- 单人游戏 ----------------
     "single.title": "单人游戏",

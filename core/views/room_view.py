@@ -54,6 +54,8 @@ GAME_ROOM_ROUTE = {
     "chess": "/g/chess/play",
     "gomoku": "/g/gomoku/play",
     "billiards": "/g/billiards/play",
+    # 0.5：3D 台球进房间，默认自由摆球（无模式设置）
+    "billiards3d": "/g/billiards3d/play",
 }
 
 # 一个房间同一时刻只允许一个轮询协程在跑（key = id(会话)）。

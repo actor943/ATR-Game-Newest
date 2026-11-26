@@ -11,6 +11,7 @@
 * games.guandan.selftest_cards   —— 牌堆 / 大小顺序 / 牌型识别 / 逢人配
 * games.guandan.selftest_engine  —— 动作守卫 / 级牌归属 / 自对弈不变量
 * games.guandan.selftest_tribute —— 进贡 / 还贡 / 抗贡 / 双下 / 选贡
+* games.guandan.selftest_ai      —— 残局封锁 / 搭档配合 / 自对弈冒烟
 
 任何一个用例失败都会直接抛出 AssertionError（退出码非 0）。
 """
@@ -27,6 +28,17 @@ from .selftest_engine import (
     test_level_ownership,
     test_level_rank_follows_winner,
     test_simulation,
+)
+from .selftest_ai import (
+    test_ai_block_single_card_opponent,
+    test_ai_finishes_when_possible,
+    test_ai_follow_blocks_one_card_opponent,
+    test_ai_forced_single_plays_highest,
+    test_ai_lets_partner_run,
+    test_ai_normal_play_unchanged,
+    test_ai_safe_beat_saves_big_cards,
+    test_ai_simulation_smoke,
+    test_ai_takes_partner_only_to_block,
 )
 from .selftest_tribute import (
     test_tribute_auto_and_engine_hook,
@@ -48,7 +60,16 @@ def main():
                  test_tribute_normal, test_tribute_refuse,
                  test_tribute_refuse_shared_jokers, test_tribute_first_leader,
                  test_tribute_double_down, test_tribute_choose_gift,
-                 test_tribute_auto_and_engine_hook, test_simulation):
+                 test_tribute_auto_and_engine_hook, test_simulation,
+                 test_ai_block_single_card_opponent,
+                 test_ai_forced_single_plays_highest,
+                 test_ai_finishes_when_possible,
+                 test_ai_follow_blocks_one_card_opponent,
+                 test_ai_safe_beat_saves_big_cards,
+                 test_ai_lets_partner_run,
+                 test_ai_takes_partner_only_to_block,
+                 test_ai_normal_play_unchanged,
+                 test_ai_simulation_smoke):
         name = test.__name__
         try:
             test()

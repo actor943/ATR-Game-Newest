@@ -1,43 +1,35 @@
 # -*- coding: utf-8 -*-
-"""简单贪心 AI：供自对弈验证与后续观战模式使用。
+"""掼蛋电脑玩家：用 :mod:`games.guandan.ai_strategy` 挑一手牌。
 
-策略（v1，够用于逻辑验证）：
-* 主动出牌：优先低层级牌型、不烧逢人配、先甩低牌、优先一次多出牌。
-* 跟牌：搭档出的牌不压；否则用最小代价压过（普通牌型优先于炸弹、
-  少用逢人配、点数尽量低）。
+骨架只做三件事：看现在该不该领出、是不是搭档牌权、要不要跟；具体取舍
+（残局封锁、保护搭档、拆牌代价等）都在 ``ai_strategy`` 里，局面清单也
+写在那个模块的文档里。
+
+返回 ``None`` 表示过牌（首出时理论上不会：有手牌必有单张）。
 """
 
 from __future__ import annotations
 
 from typing import Optional
 
+from . import ai_strategy as strategy
 from . import rules
 from .engine import TEAM_OF, Hand
-from .rules import TYPE_LEVEL, Combo
+from .rules import Combo
 
 
 def choose(state: Hand, player: int) -> Optional[Combo]:
-    """返回要出的牌型；None 表示过牌。"""
+    """返回要出的牌型；``None`` 表示过牌。"""
+    sit = strategy.inspect(state, player)
+
     if state.current is None:
         combos = rules.find_leads(state.hands[player], state.ctx)
-        if not combos:
-            return None                       # 不可能：有手牌必有单张
-        return min(combos, key=_lead_cost)
+        return strategy.choose_lead(combos, state, player, sit)
 
     if TEAM_OF[state.combo_owner] == TEAM_OF[player]:
-        return None                           # v1：不压搭档
-    beats_ = rules.find_beats(state.hands[player], state.current, state.ctx)
-    if not beats_:
-        return None
-    return min(beats_, key=_beat_cost)
+        # 默认不压搭档；只有搭档领小单张、对手只剩 1 张且我有大单张时
+        # 才破例一次（见 ai_strategy.partner_beat）
+        return strategy.partner_beat(state, player, sit)
 
-
-def _lead_cost(combo: Combo):
-    """主动出牌代价：层级低、不用野牌、点数低、一次多甩牌者优先。"""
-    return (TYPE_LEVEL[combo.type], combo.wilds_used,
-            combo.main_key - 3 * len(combo.cards))
-
-
-def _beat_cost(combo: Combo):
-    """跟牌代价：普通牌型优先、少用野牌、点数尽量低。"""
-    return (TYPE_LEVEL[combo.type], combo.wilds_used, combo.main_key)
+    beats = rules.find_beats(state.hands[player], state.current, state.ctx)
+    return strategy.choose_beat(beats, state, player, sit)

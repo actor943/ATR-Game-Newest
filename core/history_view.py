@@ -106,7 +106,8 @@ class HistoryPage:
                  max_files: int = MAX_FILES,
                  all_games: bool = False,
                  game_label_fn: Optional[Callable[[str], str]] = None,
-                 filter_game: str = ""):
+                 filter_game: str = "",
+                 extra_actions: Optional[Callable] = None):
 
         """准备页面状态（记录列表、当前选中项）。"""
         self.page = page
@@ -126,6 +127,8 @@ class HistoryPage:
         self.all_games = all_games
         self.game_label_fn = game_label_fn
         self.filter_game = filter_game
+        # 各游戏可往顶栏塞自己的入口（如掼蛋的「对局回放」）
+        self.extra_actions = extra_actions
         # 列表上方的自定义控件（主菜单页塞「按游戏筛选」的按钮条）
         self.header_controls: List[ft.Control] = []
 
@@ -221,6 +224,8 @@ class HistoryPage:
                             ),
                             on_click=lambda _e: self._reload(),
                         ),
+                        *(self.extra_actions(self)
+                          if self.extra_actions is not None else []),
                     ],
                 ),
                 ft.Container(
@@ -349,7 +354,8 @@ def build_history(page: ft.Page, navigate: NavigateFn, *,
                   max_files: int = MAX_FILES,
                   all_games: bool = False,
                   game_label_fn: Optional[Callable[[str], str]] = None,
-                  filter_game: str = "") -> ft.Control:
+                  filter_game: str = "",
+                  extra_actions: Optional[Callable] = None) -> ft.Control:
     """构造一个历史记录页（各游戏传入自己的 game_id / 摘要函数即可）。
 
     ``all_games=True`` 时列出**所有游戏**的记录（主菜单的「游玩记录」用）。
@@ -359,7 +365,7 @@ def build_history(page: ft.Page, navigate: NavigateFn, *,
         back_route=back_route, summary_fn=summary_fn,
         list_height=list_height, max_files=max_files,
         all_games=all_games, game_label_fn=game_label_fn,
-        filter_game=filter_game,
+        filter_game=filter_game, extra_actions=extra_actions,
     ).build()
 
 
