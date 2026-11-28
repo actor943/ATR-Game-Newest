@@ -33,6 +33,8 @@ except ImportError:  # 没装扩展时也能用独立窗口路径
 _GAMES = [
     ("nineball", "", "🎱", "9-Ball"),
     ("eightball", "ruletype=eightball", "🎯", "8-Ball"),
+    # 中八：上游重建后的 Chinese8Ball 规则（本地双人 1P/2P 分组）
+    ("chinese8", "ruletype=chinese8", "🇨🇳", "Chinese 8-Ball"),
     ("threecushion", "ruletype=threecushion", "🧊", "Three Cushion"),
     ("snooker", "ruletype=snooker", "🏆", "Snooker"),
     ("practice", "ruletype=eightball&practice", "📈", "Practice"),

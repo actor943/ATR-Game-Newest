@@ -178,6 +178,8 @@ STRINGS: dict[str, str] = {
     "billiards3d.nineball.desc": "Hit the lowest ball first; pot the 9 to win",
     "billiards3d.eightball": "8-Ball",
     "billiards3d.eightball.desc": "Clear your group, then pot the 8-ball",
+    "billiards3d.chinese8": "Chinese 8-Ball",
+    "billiards3d.chinese8.desc": "Chinese-style simplified rules: potting the 8 early loses (no called pockets)",
     "billiards3d.threecushion": "Three Cushion",
     "billiards3d.threecushion.desc": "The cue ball must hit three cushions first",
     "billiards3d.snooker": "Snooker",

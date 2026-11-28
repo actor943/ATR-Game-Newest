@@ -69,6 +69,7 @@
     'Ball in hand': '自由球',
     'You first': '你先手',
     'FOUL': '犯规',
+    '8-ball pocketed before clearing group': '未清台先打进 8 号球，判负',
     'YOU WON': '你赢了',
     'YOU LOST': '你输了',
     'GAME OVER': '比赛结束',

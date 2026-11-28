@@ -1,0 +1,7 @@
+import { RgbaColor } from "../types";
+/**
+ * Parses a valid OKLCH CSS color function/string
+ * https://www.w3.org/TR/css-color-4/#specifying-oklab-oklch
+ */
+export declare const parseOklchaString: (input: string) => RgbaColor | null;
+export declare const rgbaToOklchaString: (rgba: RgbaColor) => string;

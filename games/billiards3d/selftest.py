@@ -8,7 +8,7 @@ import urllib.request
 import webview
 from flet_webview import WebView
 
-from . import geometry, standalone
+from . import geometry, standalone, views
 from .local_server import game_url, site_root
 
 
@@ -23,6 +23,10 @@ def _run() -> None:
     # 0.5：移除 Anon 胶囊 + 默认中文 / 游戏内语言切换
     assert (root / "atr-overrides.css").is_file()
     assert (root / "atr_i18n.js").is_file()
+    assert (root / "atr_chinese8.js").is_file()
+    assert (root / "atr_hotseat.js").is_file()
+    chinese8 = next(g for g in views._GAMES if g[0] == "chinese8")
+    assert chinese8[1] == "ruletype=chinese8"  # 重建后的 rulefactory 分支
     html = (root / "index.html").read_text(encoding="utf-8")
     assert "atr-overrides.css" in html and "atr_i18n.js" in html
     css = (root / "atr-overrides.css").read_text(encoding="utf-8")
@@ -31,6 +35,7 @@ def _run() -> None:
     assert callable(geometry.start) and callable(geometry.snapshot)
     assert callable(standalone._FollowBridge.atr_sync)
     assert "atr_sync" in html and "atrStandaloneBack" in html
+    assert "atr_hotseat.js" in html
     url = game_url("ruletype=eightball")
     assert url.startswith("http://127.0.0.1:")
     assert url.endswith("/index.html?ruletype=eightball")

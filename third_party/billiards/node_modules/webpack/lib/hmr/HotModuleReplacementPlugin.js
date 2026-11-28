@@ -1,0 +1,1668 @@
+/*
+	MIT License https://www.opensource.org/licenses/mit-license.php
+	Author Tobias Koppers @sokra
+*/
+
+"use strict";
+
+const { SyncBailHook, SyncHook } = require("tapable");
+const { RawSource } = require("webpack-sources");
+const Compilation = require("../Compilation");
+const ConstDependency = require("../dependencies/core/ConstDependency");
+const ImportMetaHotAcceptDependency = require("../dependencies/hmr/ImportMetaHotAcceptDependency");
+const ImportMetaHotDeclineDependency = require("../dependencies/hmr/ImportMetaHotDeclineDependency");
+const ModuleHotAcceptDependency = require("../dependencies/hmr/ModuleHotAcceptDependency");
+const ModuleHotDeclineDependency = require("../dependencies/hmr/ModuleHotDeclineDependency");
+const {
+	isImportMetaFieldEnabled
+} = require("../dependencies/import-meta/ImportMetaPlugin");
+const WebpackError = require("../errors/WebpackError");
+const ChunkGraph = require("../graph/ChunkGraph");
+const HotUpdateChunk = require("../graph/HotUpdateChunk");
+const {
+	evaluateToIdentifierByPath
+} = require("../javascript/JavascriptParserHelpers");
+const { Field, NodeType } = require("../javascript/syntax").parser;
+const {
+	JAVASCRIPT_MODULE_TYPE_AUTO,
+	JAVASCRIPT_MODULE_TYPE_DYNAMIC,
+	JAVASCRIPT_MODULE_TYPE_ESM
+} = require("../module/ModuleTypeConstants");
+const NormalModule = require("../module/NormalModule");
+const RuntimeGlobals = require("../runtime/RuntimeGlobals");
+const getRenderManifestEntryPathWithInfo = require("../template/getRenderManifestEntryPathWithInfo");
+const { isSubset } = require("../util/SetHelpers");
+const TupleSet = require("../util/TupleSet");
+const { compareModulesById } = require("../util/comparators");
+const createHooksRegistry = require("../util/createHooksRegistry");
+const memoize = require("../util/memoize");
+const {
+	forEachRuntime,
+	getRuntimeKey,
+	intersectRuntime,
+	keyToRuntime,
+	mergeRuntimeOwned,
+	subtractRuntime
+} = require("../util/runtime");
+const HotModuleReplacementChunkGroupRuntimeModule = require("./HotModuleReplacementChunkGroupRuntimeModule");
+const HotModuleReplacementChunkVersionCheckRuntimeModule = require("./HotModuleReplacementChunkVersionCheckRuntimeModule");
+const HotModuleReplacementChunkVersionsRuntimeModule = require("./HotModuleReplacementChunkVersionsRuntimeModule");
+const HotModuleReplacementLoadedChunkVersionRuntimeModule = require("./HotModuleReplacementLoadedChunkVersionRuntimeModule");
+const HotModuleReplacementRuntimeModule = require("./HotModuleReplacementRuntimeModule");
+
+const getImportParserPlugin = memoize(() =>
+	require("../dependencies/import/ImportParserPlugin")
+);
+
+/** @import { CallExpression, Expression, SpreadElement } from "estree" */
+/** @import Chunk, { ChunkId } from "../graph/Chunk" */
+/** @import { ModuleId } from "../graph/ChunkGraph" */
+/** @import { AssetInfo } from "../Compilation" */
+/** @import Compiler, { Records } from "../Compiler" */
+/** @import CodeGenerationResults from "../module/CodeGenerationResults" */
+/** @import Module, { RuntimeRequirements } from "../module/Module" */
+/** @import RuntimeModule from "../runtime/RuntimeModule" */
+/** @import BasicEvaluatedExpression from "../javascript/BasicEvaluatedExpression" */
+/** @import JavascriptParser, { ImportAttributes, JavascriptNodeReader, Range } from "../javascript/JavascriptParser" */
+/** @import { RuntimeSpec } from "../util/runtime" */
+
+/** @typedef {string[]} Requests */
+
+/**
+ * Defines the hmr javascript parser hooks type used by this module.
+ * @typedef {object} HMRJavascriptParserHooks
+ * @property {SyncBailHook<[Expression | SpreadElement, Requests], void>} hotAcceptCallback
+ * @property {SyncBailHook<[CallExpression, Requests], void>} hotAcceptWithoutCallback
+ * @property {SyncBailHook<[JavascriptNodeReader, number, Requests, ImportAttributes | undefined], void>} hotAcceptCallbackByPath `hotAcceptCallback` for a tap reading the callback by id
+ * @property {SyncBailHook<[JavascriptNodeReader, number, Requests, ImportAttributes | undefined], void>} hotAcceptWithoutCallbackByPath `hotAcceptWithoutCallback` for a tap reading the call by id
+ */
+
+/** @type {WeakMap<JavascriptParser, HMRJavascriptParserHooks>} */
+const parserHooksMap = new WeakMap();
+
+/** @typedef {number} HotIndex */
+/** @typedef {Record<string, string>} FullHashChunkModuleHashes */
+/** @typedef {Record<string, string>} ChunkModuleHashes */
+/** @typedef {Record<ChunkId, string>} ChunkHashes */
+/** @typedef {Record<ChunkId, string>} ChunkRuntime */
+/** @typedef {Record<ChunkId, ModuleId[]>} ChunkModuleIds */
+/** @typedef {Record<ChunkId, ChunkId[]>} ChunkSiblingIds */
+/** @typedef {Record<ChunkId, ModuleId[]>} ChunkInjectedModuleIds */
+/** @typedef {Record<ChunkId, ModuleId[]>} ChunkRetainedDependencyIds */
+
+/** @typedef {Set<ChunkId>} ChunkIds */
+/** @typedef {Set<Module>} ModuleSet */
+
+/** @typedef {{ updatedChunkIds: ChunkIds, removedChunkIds: ChunkIds, removedModules: ModuleSet, forceLoadChunkIds: ChunkIds, suppliedModules: ModuleSet, filename: string, assetInfo: AssetInfo }} HotUpdateMainContentByRuntimeItem */
+/** @typedef {Map<string, HotUpdateMainContentByRuntimeItem>} HotUpdateMainContentByRuntime */
+
+/** @typedef {{ hot?: boolean }} HotModuleReplacementPluginLoaderContext */
+
+/**
+ * The CSS chunks a hot update removes (`r`) and loads (`l`), with the names (`n`) of the new ones.
+ * @typedef {{ r: ChunkId[], l?: ChunkId[], n?: Record<ChunkId, string> }} HotUpdateCssManifest
+ */
+
+/**
+ * The manifest a runtime downloads first in a hot update; every download handler gets it
+ * whole, so a plugin adds a field here for its own handler. It is sent as JSON; the field stays open so a
+ * plugin's interface-typed value, which carries no index signature, still fits.
+ * @typedef {{ c: ChunkId[], r: ChunkId[], m: ModuleId[], f?: ChunkId[], s?: ModuleId[], css?: HotUpdateCssManifest, [key: string]: unknown }} HotUpdateManifest
+ */
+
+/**
+ * What a plugin needs to fill its manifest field.
+ * @typedef {object} HotUpdateManifestContext
+ * @property {Compilation} compilation the compilation
+ * @property {Chunk[]} chunks the updated chunks that are still in this build
+ * @property {(chunk: Chunk) => Chunk[]} joinedSiblings the chunks that joined one of the chunk's groups since the last build, which the runtime never loads on its own
+ */
+
+const createCompilationHooks = () => ({
+	/**
+	 * Called for each hot update manifest before it is emitted; add a field for your own download handler, which gets the whole manifest.
+	 * @type {SyncHook<[HotUpdateManifest, HotUpdateManifestContext]>}
+	 * @since 5.113.0
+	 */
+	updateManifest: new SyncHook(["manifest", "context"])
+});
+
+/**
+ * The hooks `HotModuleReplacementPlugin` calls on a compilation.
+ * @typedef {ReturnType<typeof createCompilationHooks>} HotModuleReplacementCompilationHooks
+ */
+
+const PLUGIN_NAME = "HotModuleReplacementPlugin";
+
+/**
+ * Lets a hot update render a module for a runtime it has no results for, with the code,
+ * runtime requirements and hashes of another runtime that a fresh load would run.
+ * @param {ChunkGraph} chunkGraph the chunk graph
+ * @param {CodeGenerationResults} codeGenerationResults the code generation results
+ * @param {Module} module the module
+ * @param {RuntimeSpec} from the runtime it was generated for
+ * @param {RuntimeSpec} to the runtime the update renders it for
+ */
+const aliasModuleRuntime = (
+	chunkGraph,
+	codeGenerationResults,
+	module,
+	from,
+	to
+) => {
+	if (!codeGenerationResults.has(module, to)) {
+		codeGenerationResults.add(
+			module,
+			to,
+			codeGenerationResults.get(module, from)
+		);
+		chunkGraph.addModuleRuntimeRequirements(
+			module,
+			to,
+			/** @type {RuntimeRequirements} */ (
+				chunkGraph.getModuleRuntimeRequirements(module, from)
+			),
+			false
+		);
+	}
+	// Plugins name a module's own assets by its hash (e.g. a `.wasm` file).
+	if (
+		!chunkGraph.hasModuleHashes(module, to) &&
+		chunkGraph.hasModuleHashes(module, from)
+	) {
+		chunkGraph.setModuleHashes(
+			module,
+			to,
+			chunkGraph.getModuleHash(module, from),
+			chunkGraph.getRenderedModuleHash(module, from)
+		);
+	}
+};
+
+/**
+ * Reads the entry of a records map for a chunk id, which may be an `Object.prototype` key.
+ * @template T
+ * @param {Record<ChunkId, T> | undefined} map a records map keyed by chunk id
+ * @param {ChunkId | null} chunkId the chunk id
+ * @returns {T | undefined} the entry, when the map has one of its own
+ */
+const getChunkRecord = (map, chunkId) =>
+	map !== undefined && Object.prototype.hasOwnProperty.call(map, `${chunkId}`)
+		? map[/** @type {ChunkId} */ (chunkId)]
+		: undefined;
+
+/**
+ * The chunks that joined one of the chunk's groups since the last build: clients that
+ * loaded the group never load them on their own.
+ * @param {Records} records the previous build's records
+ * @param {Chunk} chunk the chunk
+ * @returns {Chunk[]} the joined chunks
+ */
+const getJoinedSiblings = (records, chunk) => {
+	const oldSiblingIds = getChunkRecord(records.chunkSiblingIds, chunk.id);
+	/** @type {Set<Chunk>} */
+	const joined = new Set();
+	for (const group of chunk.groupsIterable) {
+		for (const sibling of group.chunks) {
+			if (
+				sibling === chunk ||
+				sibling.id === null ||
+				// Records from before sibling ids were kept only know the old chunks.
+				(oldSiblingIds
+					? oldSiblingIds.includes(sibling.id)
+					: Object.prototype.hasOwnProperty.call(
+							records.chunkHashes,
+							`${sibling.id}`
+						))
+			) {
+				continue;
+			}
+			joined.add(sibling);
+		}
+	}
+	return [...joined];
+};
+
+/**
+ * Checks whether a module is in another chunk of the chunk's groups that the
+ * previous build already had, so clients holding the chunk loaded it too.
+ * @param {ChunkGraph} chunkGraph the chunk graph
+ * @param {Records} records the previous build's records
+ * @param {Chunk} chunk the chunk
+ * @param {Module} module the module
+ * @returns {boolean} true, when such a sibling chunk holds the module
+ */
+const isInOldSiblingChunk = (chunkGraph, records, chunk, module) => {
+	for (const group of chunk.groupsIterable) {
+		for (const sibling of group.chunks) {
+			if (
+				sibling !== chunk &&
+				Object.prototype.hasOwnProperty.call(
+					records.chunkHashes,
+					`${sibling.id}`
+				) &&
+				chunkGraph.isModuleInChunk(module, sibling)
+			) {
+				return true;
+			}
+		}
+	}
+	return false;
+};
+
+class HotModuleReplacementPlugin {
+	/**
+	 * Returns the attached hooks.
+	 * @param {JavascriptParser} parser the parser
+	 * @returns {HMRJavascriptParserHooks} the attached hooks
+	 */
+	static getParserHooks(parser) {
+		// matched by class name, as `createHooksRegistry` does: a parser from another
+		// webpack copy has to pass, and requiring the parser here loads it eagerly
+		const candidate = /** @type {{ constructor?: { name: string } } | null} */ (
+			parser
+		);
+		if (
+			!candidate ||
+			!candidate.constructor ||
+			candidate.constructor.name !== "JavascriptParser"
+		) {
+			throw new TypeError(
+				"The 'parser' argument must be an instance of JavascriptParser"
+			);
+		}
+		let hooks = parserHooksMap.get(parser);
+		if (hooks === undefined) {
+			hooks = {
+				hotAcceptCallback: new SyncBailHook(["expression", "requests"]),
+				hotAcceptWithoutCallback: new SyncBailHook(["expression", "requests"]),
+				hotAcceptCallbackByPath: new SyncBailHook([
+					"path",
+					"node",
+					"requests",
+					"attributes"
+				]),
+				hotAcceptWithoutCallbackByPath: new SyncBailHook([
+					"path",
+					"node",
+					"requests",
+					"attributes"
+				])
+			};
+			parserHooksMap.set(parser, hooks);
+		}
+		return hooks;
+	}
+
+	/**
+	 * Applies the plugin by registering its hooks on the compiler.
+	 * @param {Compiler} compiler the compiler instance
+	 * @returns {void}
+	 */
+	apply(compiler) {
+		const { _backCompat: backCompat } = compiler;
+		if (compiler.options.output.strictModuleErrorHandling === undefined) {
+			compiler.options.output.strictModuleErrorHandling = true;
+		}
+		const runtimeRequirements = [RuntimeGlobals.module];
+
+		/**
+		 * Adds the dependencies of the requests a hot call's first argument names.
+		 * @param {JavascriptParser} parser the parser
+		 * @param {typeof ModuleHotAcceptDependency | typeof ModuleHotDeclineDependency} ParamDependency dependency
+		 * @param {JavascriptNodeReader} path the reader of the call's nodes
+		 * @param {number} node the call
+		 * @param {ImportAttributes | undefined} attributes the attributes the call passes
+		 * @returns {Requests} the requests it names
+		 */
+		const addHotRequests = (
+			parser,
+			ParamDependency,
+			path,
+			node,
+			attributes
+		) => {
+			const module = parser.state.module;
+			const arg = parser.evaluateExpression(
+				parser.nodeOfPath(path, path.field(0, Field.arguments, node))
+			);
+			/** @type {BasicEvaluatedExpression[]} */
+			let params = [];
+			if (arg.isString()) {
+				params = [arg];
+			} else if (arg.isArray()) {
+				params =
+					/** @type {BasicEvaluatedExpression[]} */
+					(arg.items).filter((param) => param.isString());
+			}
+			/** @type {Requests} */
+			const requests = [];
+			const loc = parser.getLocation(parser.nodeOfPath(path, node));
+			for (const [idx, param] of params.entries()) {
+				const request = /** @type {string} */ (param.string);
+				const dep = new ParamDependency(
+					request,
+					/** @type {Range} */ (param.range)
+				);
+				dep.optional = true;
+				dep.attributes = attributes;
+				dep.setLocWithIndex(loc, idx);
+				module.addDependency(dep);
+				requests.push(request);
+			}
+			return requests;
+		};
+
+		/**
+		 * Reads the options a hot call passes after its requests, as in
+		 * `accept("./a.css", { with: { type: "css" } }, callback)`, and drops them,
+		 * as the runtime takes none.
+		 * @param {JavascriptParser} parser the parser
+		 * @param {JavascriptNodeReader} path the reader of the call's nodes
+		 * @param {number} node the call
+		 * @returns {{ attributes: ImportAttributes | undefined } | undefined} the options, when passed
+		 */
+		const readHotOptions = (parser, path, node) => {
+			if (path.fieldCount(Field.arguments, node) < 2) return;
+			const options = path.field(1, Field.arguments, node);
+			if (path.type(options) !== NodeType.ObjectExpression) return;
+			const dep = new ConstDependency("", [
+				path.range(path.field(0, Field.arguments, node))[1],
+				path.range(options)[1]
+			]);
+			dep.loc = parser.getLocation(parser.nodeOfPath(path, options));
+			parser.state.module.addPresentationalDependency(dep);
+			const attributes = getImportParserPlugin().getImportCallAttributes(
+				parser,
+				path,
+				options
+			);
+			return { attributes: attributes || undefined };
+		};
+
+		/**
+		 * Replaces a hot call's callee with the module's hot object member.
+		 * @param {JavascriptParser} parser the parser
+		 * @param {string} member `accept` or `decline`
+		 * @param {JavascriptNodeReader} path the reader of the call's nodes
+		 * @param {number} node the call
+		 * @returns {void}
+		 */
+		const replaceHotCallee = (parser, member, path, node) => {
+			const module = parser.state.module;
+			const dep = new ConstDependency(
+				`${module.moduleArgument}.hot.${member}`,
+				path.range(path.field(0, Field.callee, node)),
+				runtimeRequirements
+			);
+			dep.loc = parser.getLocation(parser.nodeOfPath(path, node));
+			module.addPresentationalDependency(dep);
+			module.buildInfo.moduleConcatenationBailout = "Hot Module Replacement";
+		};
+
+		/**
+		 * Creates an accept handler.
+		 * @param {JavascriptParser} parser the parser
+		 * @param {typeof ModuleHotAcceptDependency} ParamDependency dependency
+		 * @returns {(path: JavascriptNodeReader, node: number) => boolean | undefined} callback
+		 */
+		const createAcceptHandler = (parser, ParamDependency) => {
+			// through the static method: replacing it stays a way to intercept
+			const {
+				hotAcceptCallback,
+				hotAcceptWithoutCallback,
+				hotAcceptCallbackByPath,
+				hotAcceptWithoutCallbackByPath
+			} = HotModuleReplacementPlugin.getParserHooks(parser);
+
+			return (path, node) => {
+				replaceHotCallee(parser, "accept", path, node);
+				const count = path.fieldCount(Field.arguments, node);
+				if (count >= 1) {
+					const options = readHotOptions(parser, path, node);
+					const attributes = options && options.attributes;
+					const first = options ? 2 : 1;
+					const requests = addHotRequests(
+						parser,
+						ParamDependency,
+						path,
+						node,
+						attributes
+					);
+					if (requests.length > 0) {
+						if (count > first) {
+							const callback = path.field(first, Field.arguments, node);
+							hotAcceptCallbackByPath.call(
+								path,
+								callback,
+								requests,
+								attributes
+							);
+							// the hooks take objects, made only for a tap that reads them
+							if (hotAcceptCallback.isUsed()) {
+								hotAcceptCallback.call(
+									/** @type {Expression} */
+									(path.object(callback)),
+									requests
+								);
+							}
+							for (let i = first; i < count; i++) {
+								parser.walkExpression(
+									parser.nodeOfPath(path, path.field(i, Field.arguments, node))
+								);
+							}
+							return true;
+						}
+						hotAcceptWithoutCallbackByPath.call(
+							path,
+							node,
+							requests,
+							attributes
+						);
+						if (hotAcceptWithoutCallback.isUsed()) {
+							hotAcceptWithoutCallback.call(
+								/** @type {CallExpression} */ (path.object(node)),
+								requests
+							);
+						}
+						return true;
+					}
+				}
+				for (let i = 0; i < count; i++) {
+					parser.walkExpression(
+						parser.nodeOfPath(path, path.field(i, Field.arguments, node))
+					);
+				}
+				return true;
+			};
+		};
+
+		/**
+		 * Creates a decline handler.
+		 * @param {JavascriptParser} parser the parser
+		 * @param {typeof ModuleHotDeclineDependency} ParamDependency dependency
+		 * @returns {(path: JavascriptNodeReader, node: number) => boolean | undefined} callback
+		 */
+		const createDeclineHandler = (parser, ParamDependency) => (path, node) => {
+			replaceHotCallee(parser, "decline", path, node);
+			const count = path.fieldCount(Field.arguments, node);
+			const options = readHotOptions(parser, path, node);
+			if (count === (options ? 2 : 1)) {
+				addHotRequests(
+					parser,
+					ParamDependency,
+					path,
+					node,
+					options && options.attributes
+				);
+			}
+			return true;
+		};
+
+		/**
+		 * Creates a hmr expression handler.
+		 * @param {JavascriptParser} parser the parser
+		 * @returns {(path: JavascriptNodeReader, node: number) => boolean | undefined} callback
+		 */
+		const createHMRExpressionHandler = (parser) => (path, node) => {
+			const module = parser.state.module;
+			const dep = new ConstDependency(
+				`${module.moduleArgument}.hot`,
+				path.range(node),
+				runtimeRequirements
+			);
+			dep.loc = parser.getLocation(parser.nodeOfPath(path, node));
+			module.addPresentationalDependency(dep);
+			module.buildInfo.moduleConcatenationBailout = "Hot Module Replacement";
+			return true;
+		};
+
+		/**
+		 * Processes the provided parser.
+		 * @param {JavascriptParser} parser the parser
+		 * @returns {void}
+		 */
+		const applyModuleHot = (parser) => {
+			parser.hooks.evaluateIdentifier.for("module.hot").tap(
+				{
+					name: PLUGIN_NAME,
+					before: "NodeStuffPlugin",
+					path: true
+				},
+				evaluateToIdentifierByPath("module.hot", "module", () => ["hot"], true)
+			);
+			parser.hooks.call
+				.for("module.hot.accept")
+				.tap(
+					{ name: PLUGIN_NAME, path: true },
+					createAcceptHandler(parser, ModuleHotAcceptDependency)
+				);
+			parser.hooks.call
+				.for("module.hot.decline")
+				.tap(
+					{ name: PLUGIN_NAME, path: true },
+					createDeclineHandler(parser, ModuleHotDeclineDependency)
+				);
+			parser.hooks.expression
+				.for("module.hot")
+				.tap(
+					{ name: PLUGIN_NAME, path: true },
+					createHMRExpressionHandler(parser)
+				);
+		};
+
+		/**
+		 * Apply import meta hot.
+		 * @param {JavascriptParser} parser the parser
+		 * @returns {void}
+		 */
+		const applyImportMetaHot = (parser) => {
+			parser.hooks.evaluateIdentifier.for("import.meta.webpackHot").tap(
+				{ name: PLUGIN_NAME, path: true },
+				evaluateToIdentifierByPath(
+					"import.meta.webpackHot",
+					"import.meta",
+					() => ["webpackHot"],
+					true
+				)
+			);
+			parser.hooks.call
+				.for("import.meta.webpackHot.accept")
+				.tap(
+					{ name: PLUGIN_NAME, path: true },
+					createAcceptHandler(parser, ImportMetaHotAcceptDependency)
+				);
+			parser.hooks.call
+				.for("import.meta.webpackHot.decline")
+				.tap(
+					{ name: PLUGIN_NAME, path: true },
+					createDeclineHandler(parser, ImportMetaHotDeclineDependency)
+				);
+			parser.hooks.expression
+				.for("import.meta.webpackHot")
+				.tap(
+					{ name: PLUGIN_NAME, path: true },
+					createHMRExpressionHandler(parser)
+				);
+		};
+
+		compiler.hooks.compilation.tap(
+			PLUGIN_NAME,
+			(compilation, { normalModuleFactory }) => {
+				// This applies the HMR plugin only to the targeted compiler
+				// It should not affect child compilations
+				if (compilation.compiler !== compiler) return;
+
+				// #region module.hot.* API
+				compilation.dependencyFactories.set(
+					ModuleHotAcceptDependency,
+					normalModuleFactory
+				);
+				compilation.dependencyTemplates.set(
+					ModuleHotAcceptDependency,
+					new ModuleHotAcceptDependency.Template()
+				);
+				compilation.dependencyFactories.set(
+					ModuleHotDeclineDependency,
+					normalModuleFactory
+				);
+				compilation.dependencyTemplates.set(
+					ModuleHotDeclineDependency,
+					new ModuleHotDeclineDependency.Template()
+				);
+				// #endregion
+
+				// #region import.meta.webpackHot.* API
+				compilation.dependencyFactories.set(
+					ImportMetaHotAcceptDependency,
+					normalModuleFactory
+				);
+				compilation.dependencyTemplates.set(
+					ImportMetaHotAcceptDependency,
+					new ImportMetaHotAcceptDependency.Template()
+				);
+				compilation.dependencyFactories.set(
+					ImportMetaHotDeclineDependency,
+					normalModuleFactory
+				);
+				compilation.dependencyTemplates.set(
+					ImportMetaHotDeclineDependency,
+					new ImportMetaHotDeclineDependency.Template()
+				);
+				// #endregion
+
+				/** @type {HotIndex} */
+				let hotIndex = 0;
+				/** @type {FullHashChunkModuleHashes} */
+				const fullHashChunkModuleHashes = {};
+				/** @type {ChunkModuleHashes} */
+				const chunkModuleHashes = {};
+
+				compilation.hooks.record.tap(PLUGIN_NAME, (compilation, records) => {
+					if (records.hash === compilation.hash) return;
+					const chunkGraph = compilation.chunkGraph;
+					records.hash = compilation.hash;
+					records.hotIndex = hotIndex;
+					records.fullHashChunkModuleHashes = fullHashChunkModuleHashes;
+					records.chunkModuleHashes = chunkModuleHashes;
+					// Without a prototype, a chunk id like `__proto__` is stored as any other.
+					/** @type {ChunkHashes} */
+					const chunkHashes = Object.create(null);
+					/** @type {ChunkRuntime} */
+					const chunkRuntime = Object.create(null);
+					/** @type {ChunkSiblingIds} */
+					const chunkSiblingIds = Object.create(null);
+					records.chunkHashes = chunkHashes;
+					records.chunkRuntime = chunkRuntime;
+					records.chunkSiblingIds = chunkSiblingIds;
+					for (const chunk of compilation.chunks) {
+						const chunkId = /** @type {ChunkId} */ (chunk.id);
+						chunkHashes[chunkId] = /** @type {string} */ (chunk.hash);
+						chunkRuntime[chunkId] = getRuntimeKey(chunk.runtime);
+						/** @type {Set<ChunkId>} */
+						const siblingIds = new Set();
+						for (const group of chunk.groupsIterable) {
+							for (const sibling of group.chunks) {
+								if (sibling !== chunk) {
+									siblingIds.add(/** @type {ChunkId} */ (sibling.id));
+								}
+							}
+						}
+						chunkSiblingIds[chunkId] = [...siblingIds];
+					}
+					/** @type {ChunkInjectedModuleIds} */
+					const chunkInjectedModuleIds = Object.create(null);
+					records.chunkInjectedModuleIds = chunkInjectedModuleIds;
+					for (const [chunk, modules] of injectedModules) {
+						chunkInjectedModuleIds[/** @type {ChunkId} */ (chunk.id)] =
+							Array.from(
+								modules,
+								(module) =>
+									/** @type {ModuleId} */ (chunkGraph.getModuleId(module))
+							);
+					}
+					/** @type {ChunkModuleIds} */
+					const chunkModuleIds = Object.create(null);
+					records.chunkModuleIds = chunkModuleIds;
+					for (const chunk of compilation.chunks) {
+						const chunkId = /** @type {ChunkId} */ (chunk.id);
+
+						/** @type {ModuleId[]} */
+						const moduleIds = [];
+						for (const m of chunkGraph.getOrderedChunkModulesIterable(
+							chunk,
+							compareModulesById(chunkGraph)
+						)) {
+							moduleIds.push(
+								/** @type {ModuleId} */ (chunkGraph.getModuleId(m))
+							);
+							if (m.getRootModule() !== m) {
+								for (const innerModule of m.getSourceModules()) {
+									if (
+										innerModule.buildMeta &&
+										innerModule.buildMeta.needIdInConcatenation
+									) {
+										const innerId = chunkGraph.getModuleId(innerModule);
+										if (innerId !== null) {
+											moduleIds.push(innerId);
+										}
+									}
+								}
+							}
+						}
+						const retained = retainedModules.get(chunk);
+						if (retained !== undefined) {
+							for (const module of retained) {
+								moduleIds.push(
+									/** @type {ModuleId} */ (chunkGraph.getModuleId(module))
+								);
+							}
+						}
+						chunkModuleIds[chunkId] = moduleIds;
+					}
+					/** @type {ChunkRetainedDependencyIds} */
+					const chunkRetainedDependencyIds = Object.create(null);
+					records.chunkRetainedDependencyIds = chunkRetainedDependencyIds;
+					for (const [chunk, modules] of retainedDependencies) {
+						chunkRetainedDependencyIds[/** @type {ChunkId} */ (chunk.id)] =
+							Array.from(
+								modules,
+								(module) =>
+									/** @type {ModuleId} */ (chunkGraph.getModuleId(module))
+							);
+					}
+				});
+				/** @type {TupleSet<[Module], Chunk>} */
+				const updatedModules = new TupleSet();
+				/** @type {Map<Chunk, Set<Module>>} */
+				const injectedModules = new Map();
+				/** @type {TupleSet<[Module], Chunk>} */
+				const fullHashModules = new TupleSet();
+				/** @type {TupleSet<[Module], RuntimeSpec>} */
+				const nonCodeGeneratedModules = new TupleSet();
+				/** @type {Map<Chunk, Module[]>} */
+				const retainedModules = new Map();
+				/**
+				 * The retained modules only a retained module imports: the next build retains
+				 * them again only while one still does.
+				 * @type {Map<Chunk, Set<Module>>}
+				 */
+				const retainedDependencies = new Map();
+				/** @type {Map<ModuleId, Module> | undefined} */
+				let modulesById;
+				/**
+				 * Maps each module id of this build to its module, built once on first use.
+				 * Runtime modules all share the empty id; one never hides another module.
+				 * @returns {Map<ModuleId, Module>} modules by id
+				 */
+				const getModulesById = () => {
+					if (modulesById === undefined) {
+						const chunkGraph = compilation.chunkGraph;
+						modulesById = new Map();
+						for (const module of compilation.modules) {
+							const id = /** @type {ModuleId} */ (
+								chunkGraph.getModuleId(module)
+							);
+							if (module.is("runtime") && modulesById.has(id)) continue;
+							modulesById.set(id, module);
+						}
+					}
+					return modulesById;
+				};
+				compilation.hooks.afterSeal.tap(PLUGIN_NAME, () => {
+					modulesById = undefined;
+				});
+				compilation.hooks.fullHash.tap(PLUGIN_NAME, (hash) => {
+					const chunkGraph = compilation.chunkGraph;
+					const records = /** @type {Records} */ (compilation.records);
+					// A reseal assigns module ids again.
+					modulesById = undefined;
+					for (const chunk of compilation.chunks) {
+						/**
+						 * Returns module hash.
+						 * @param {Module} module module
+						 * @returns {string} module hash
+						 */
+						const getModuleHash = (module) => {
+							const codeGenerationResults =
+								/** @type {CodeGenerationResults} */
+								(compilation.codeGenerationResults);
+							if (codeGenerationResults.has(module, chunk.runtime)) {
+								return codeGenerationResults.getHash(module, chunk.runtime);
+							}
+							nonCodeGeneratedModules.add(module, chunk.runtime);
+							return chunkGraph.getModuleHash(module, chunk.runtime);
+						};
+						const fullHashModulesInThisChunk =
+							chunkGraph.getChunkFullHashModulesSet(chunk);
+						if (fullHashModulesInThisChunk !== undefined) {
+							for (const module of fullHashModulesInThisChunk) {
+								fullHashModules.add(module, chunk);
+							}
+						}
+						const modules = chunkGraph.getChunkModulesIterable(chunk);
+						if (modules !== undefined) {
+							if (records.chunkModuleHashes) {
+								if (fullHashModulesInThisChunk !== undefined) {
+									for (const module of modules) {
+										const key = `${chunk.id}|${module.identifier()}`;
+										const hash = getModuleHash(module);
+										if (
+											fullHashModulesInThisChunk.has(
+												/** @type {RuntimeModule} */
+												(module)
+											)
+										) {
+											if (
+												/** @type {FullHashChunkModuleHashes} */
+												(records.fullHashChunkModuleHashes)[key] !== hash
+											) {
+												updatedModules.add(module, chunk);
+											}
+											fullHashChunkModuleHashes[key] = hash;
+										} else {
+											if (records.chunkModuleHashes[key] !== hash) {
+												updatedModules.add(module, chunk);
+											}
+											chunkModuleHashes[key] = hash;
+										}
+									}
+								} else {
+									for (const module of modules) {
+										const key = `${chunk.id}|${module.identifier()}`;
+										const hash = getModuleHash(module);
+										if (records.chunkModuleHashes[key] !== hash) {
+											updatedModules.add(module, chunk);
+										}
+										chunkModuleHashes[key] = hash;
+									}
+								}
+							} else if (fullHashModulesInThisChunk !== undefined) {
+								for (const module of modules) {
+									const key = `${chunk.id}|${module.identifier()}`;
+									const hash = getModuleHash(module);
+									if (
+										fullHashModulesInThisChunk.has(
+											/** @type {RuntimeModule} */ (module)
+										)
+									) {
+										fullHashChunkModuleHashes[key] = hash;
+									} else {
+										chunkModuleHashes[key] = hash;
+									}
+								}
+							} else {
+								for (const module of modules) {
+									const key = `${chunk.id}|${module.identifier()}`;
+									const hash = getModuleHash(module);
+									chunkModuleHashes[key] = hash;
+								}
+							}
+						}
+						const oldModuleIds =
+							records.chunkModuleHashes &&
+							getChunkRecord(records.chunkModuleIds, chunk.id);
+						if (oldModuleIds === undefined) continue;
+						const modulesById = getModulesById();
+						// A module that left this chunk but not its runtime stays cached in the
+						// chunk's clients, which load no other chunk holding it: keep it (and
+						// what it now imports synchronously) here so its updates reach them.
+						const oldDependencies = getChunkRecord(
+							records.chunkRetainedDependencyIds,
+							chunk.id
+						);
+						const oldDependencyIds =
+							oldDependencies !== undefined
+								? new Set(oldDependencies)
+								: undefined;
+						/** @type {Module[]} */
+						const queue = [];
+						for (const id of oldModuleIds) {
+							if (oldDependencyIds !== undefined && oldDependencyIds.has(id)) {
+								continue;
+							}
+							const module = modulesById.get(id);
+							if (module !== undefined && !module.is("runtime")) {
+								queue.push(module);
+							}
+						}
+						const rootCount = queue.length;
+						/** @type {Set<Module>} */
+						const retained = new Set();
+						/** @type {Set<Module>} */
+						const dependencies = new Set();
+						for (let i = 0; i < queue.length; i++) {
+							const module = queue[i];
+							if (
+								retained.has(module) ||
+								chunkGraph.isModuleInChunk(module, chunk)
+							) {
+								continue;
+							}
+							const runtimes = chunkGraph.getModuleRuntimes(module);
+							if (!runtimes.has(chunk.runtime)) {
+								// A chunk shared with another runtime holds it under their merged
+								// runtime: a fresh load runs that code, so the update renders it.
+								const codeGenerationResults =
+									/** @type {CodeGenerationResults} */
+									(compilation.codeGenerationResults);
+								let sharedRuntime;
+								for (const runtime of runtimes) {
+									if (
+										intersectRuntime(runtime, chunk.runtime) !== undefined &&
+										codeGenerationResults.has(module, runtime)
+									) {
+										sharedRuntime = runtime;
+										break;
+									}
+								}
+								if (sharedRuntime === undefined) continue;
+								aliasModuleRuntime(
+									chunkGraph,
+									codeGenerationResults,
+									module,
+									sharedRuntime,
+									chunk.runtime
+								);
+							}
+							if (isInOldSiblingChunk(chunkGraph, records, chunk, module)) {
+								continue;
+							}
+							retained.add(module);
+							if (i >= rootCount) dependencies.add(module);
+							const key = `${chunk.id}|${module.identifier()}`;
+							const hash = getModuleHash(module);
+							if (
+								/** @type {ChunkModuleHashes} */ (records.chunkModuleHashes)[
+									key
+								] !== hash
+							) {
+								updatedModules.add(module, chunk);
+							}
+							chunkModuleHashes[key] = hash;
+							for (const dependency of module.dependencies) {
+								const connection =
+									compilation.moduleGraph.getConnection(dependency);
+								if (
+									connection !== undefined &&
+									connection.isTargetActive(chunk.runtime)
+								) {
+									queue.push(connection.module);
+								}
+							}
+						}
+						if (retained.size > 0) retainedModules.set(chunk, [...retained]);
+						if (dependencies.size > 0) {
+							retainedDependencies.set(chunk, dependencies);
+						}
+					}
+
+					hotIndex = records.hotIndex || 0;
+					if (updatedModules.size > 0) hotIndex++;
+
+					hash.update(`${hotIndex}`);
+				});
+				const updateManifestHook =
+					HotModuleReplacementPlugin.getCompilationHooks(
+						compilation
+					).updateManifest;
+				compilation.hooks.processAssets.tap(
+					{
+						name: PLUGIN_NAME,
+						stage: Compilation.PROCESS_ASSETS_STAGE_ADDITIONAL
+					},
+					() => {
+						const chunkGraph = compilation.chunkGraph;
+						const records = /** @type {Records} */ (compilation.records);
+						if (records.hash === compilation.hash) return;
+						if (
+							!records.chunkModuleHashes ||
+							!records.chunkHashes ||
+							!records.chunkModuleIds
+						) {
+							return;
+						}
+						const codeGenerationResults =
+							/** @type {CodeGenerationResults} */
+							(compilation.codeGenerationResults);
+						for (const [module, chunk] of fullHashModules) {
+							const key = `${chunk.id}|${module.identifier()}`;
+							const hash = nonCodeGeneratedModules.has(module, chunk.runtime)
+								? chunkGraph.getModuleHash(module, chunk.runtime)
+								: codeGenerationResults.getHash(module, chunk.runtime);
+							if (records.chunkModuleHashes[key] !== hash) {
+								updatedModules.add(module, chunk);
+							}
+							chunkModuleHashes[key] = hash;
+						}
+
+						/** @type {HotUpdateMainContentByRuntime} */
+						const hotUpdateMainContentByRuntime = new Map();
+						/** @type {RuntimeSpec} */
+						let allOldRuntime;
+						const chunkRuntime =
+							/** @type {ChunkRuntime} */
+							(records.chunkRuntime);
+						for (const key of Object.keys(chunkRuntime)) {
+							const runtime = keyToRuntime(chunkRuntime[key]);
+							allOldRuntime = mergeRuntimeOwned(allOldRuntime, runtime);
+						}
+						forEachRuntime(allOldRuntime, (runtime) => {
+							const { path: filename, info: assetInfo } =
+								compilation.getPathWithInfo(
+									compilation.outputOptions.hotUpdateMainFilename,
+									{
+										hash: records.hash,
+										runtime
+									}
+								);
+							hotUpdateMainContentByRuntime.set(
+								/** @type {string} */ (runtime),
+								{
+									/** @type {ChunkIds} */
+									updatedChunkIds: new Set(),
+									/** @type {ChunkIds} */
+									removedChunkIds: new Set(),
+									/** @type {ModuleSet} */
+									removedModules: new Set(),
+									/** @type {ChunkIds} */
+									forceLoadChunkIds: new Set(),
+									/** @type {ModuleSet} */
+									suppliedModules: new Set(),
+									filename,
+									assetInfo
+								}
+							);
+						});
+						if (hotUpdateMainContentByRuntime.size === 0) return;
+
+						// All active modules, to verify which modules are removed completely
+						const allModules = getModulesById();
+						/** @type {Map<string, Chunk>} */
+						const chunksById = new Map();
+						for (const chunk of compilation.chunks) {
+							chunksById.set(`${chunk.id}`, chunk);
+						}
+
+						// List of completely removed modules
+						/** @type {Set<ModuleId>} */
+						const completelyRemovedModules = new Set();
+
+						/** @type {Map<ModuleId, string[]> | undefined} */
+						let oldChunkKeysByModuleId;
+						/**
+						 * Checks whether a module's code is the same as in a chunk of the previous build.
+						 * @param {Module} module the module
+						 * @param {Chunk} chunk a chunk holding it now
+						 * @param {RuntimeSpec} runtime the runtimes whose clients would keep it
+						 * @returns {boolean} true, when the previous build had this code
+						 */
+						const isUnchangedSinceRecords = (module, chunk, runtime) => {
+							if (!updatedModules.has(module, chunk)) return true;
+							if (oldChunkKeysByModuleId === undefined) {
+								oldChunkKeysByModuleId = new Map();
+								const chunkModuleIds =
+									/** @type {ChunkModuleIds} */
+									(records.chunkModuleIds);
+								for (const key of Object.keys(chunkModuleIds)) {
+									for (const id of chunkModuleIds[key]) {
+										const keys = oldChunkKeysByModuleId.get(id);
+										if (keys === undefined) {
+											oldChunkKeysByModuleId.set(id, [key]);
+										} else {
+											keys.push(key);
+										}
+									}
+								}
+							}
+							const keys = oldChunkKeysByModuleId.get(
+								/** @type {ModuleId} */ (chunkGraph.getModuleId(module))
+							);
+							if (keys === undefined) return false;
+							const hash = codeGenerationResults.getHash(module, chunk.runtime);
+							const identifier = module.identifier();
+							// Code is generated per runtime: each runtime's clients must have run
+							// this code, from an old chunk of that runtime with the same hash.
+							let unchanged = true;
+							forEachRuntime(runtime, (runtime) => {
+								unchanged =
+									unchanged &&
+									keys.some(
+										(key) =>
+											subtractRuntime(
+												runtime,
+												keyToRuntime(
+													/** @type {ChunkRuntime} */ (records.chunkRuntime)[
+														key
+													]
+												)
+											) === undefined &&
+											/** @type {ChunkModuleHashes} */
+											(records.chunkModuleHashes)[`${key}|${identifier}`] ===
+												hash
+									);
+							});
+							return unchanged;
+						};
+
+						for (const key of Object.keys(records.chunkHashes)) {
+							const oldRuntime = keyToRuntime(
+								/** @type {ChunkRuntime} */
+								(records.chunkRuntime)[key]
+							);
+							/** @type {Module[]} */
+							const remainingModules = [];
+							// Check which modules are removed
+							for (const id of records.chunkModuleIds[key]) {
+								const module = allModules.get(id);
+								if (module === undefined) {
+									completelyRemovedModules.add(id);
+								} else {
+									remainingModules.push(module);
+								}
+							}
+
+							/** @type {ChunkId | null} */
+							let chunkId;
+							/** @type {undefined | Module[]} */
+							let newModules;
+							/** @type {undefined | RuntimeModule[]} */
+							let newRuntimeModules;
+							/** @type {undefined | RuntimeModule[]} */
+							let newFullHashModules;
+							/** @type {undefined | RuntimeModule[]} */
+							let newDependentHashModules;
+							/** @type {RuntimeSpec} */
+							let newRuntime;
+							/** @type {RuntimeSpec} */
+							let removedFromRuntime;
+							const currentChunk = chunksById.get(key);
+							if (currentChunk) {
+								chunkId = currentChunk.id;
+								newRuntime = intersectRuntime(
+									currentChunk.runtime,
+									allOldRuntime
+								);
+								if (newRuntime === undefined) continue;
+								newModules = chunkGraph
+									.getChunkModules(currentChunk)
+									.filter((module) => updatedModules.has(module, currentChunk));
+								const retained = retainedModules.get(currentChunk);
+								if (retained !== undefined) {
+									for (const module of retained) {
+										if (updatedModules.has(module, currentChunk)) {
+											newModules.push(module);
+										}
+									}
+								}
+								/** @type {Set<Module>} */
+								const injected = new Set();
+								/**
+								 * Ships a module of another chunk in this chunk's hot update.
+								 * @param {Module} module the module
+								 * @param {Chunk} chunk a chunk holding it in this runtime
+								 * @param {boolean} supply true, when an unchanged one only needs its factory
+								 */
+								const inject = (module, chunk, supply) => {
+									injected.add(module);
+									const hash = codeGenerationResults.getHash(
+										module,
+										chunk.runtime
+									);
+									const hashKey = `${key}|${module.identifier()}`;
+									const changed =
+										/** @type {ChunkModuleHashes} */
+										(records.chunkModuleHashes)[hashKey] !== hash;
+									chunkModuleHashes[hashKey] = hash;
+									if (!supply && !changed) return;
+									// A fresh load of the chunk runs the code generated for its own
+									// runtime, so the update renders that code for this runtime too.
+									aliasModuleRuntime(
+										chunkGraph,
+										codeGenerationResults,
+										module,
+										chunk.runtime,
+										currentChunk.runtime
+									);
+									// The client may already run an unchanged one through another
+									// chunk: it only needs the factory, not a re-execution.
+									if (
+										supply &&
+										isUnchangedSinceRecords(module, chunk, newRuntime)
+									) {
+										forEachRuntime(newRuntime, (runtime) => {
+											/** @type {HotUpdateMainContentByRuntimeItem} */ (
+												hotUpdateMainContentByRuntime.get(
+													/** @type {string} */ (runtime)
+												)
+											).suppliedModules.add(module);
+										});
+									}
+									/** @type {Module[]} */ (newModules).push(module);
+								};
+								// The runtime never loads a chunk that newly joined a group it already
+								// loaded (e.g. a new initial chunk), so its modules ride along here.
+								for (const chunk of getJoinedSiblings(records, currentChunk)) {
+									if (
+										intersectRuntime(chunk.runtime, newRuntime) === undefined
+									) {
+										continue;
+									}
+									for (const module of chunkGraph.getChunkModulesIterable(
+										chunk
+									)) {
+										if (
+											!chunkGraph.isModuleInChunk(module, currentChunk) &&
+											!injected.has(module) &&
+											!(retained !== undefined && retained.includes(module))
+										) {
+											inject(module, chunk, true);
+										}
+									}
+								}
+								// Clients keep only this chunk loaded, so what earlier updates
+								// injected into it keeps getting its changes here.
+								const injectedIds = getChunkRecord(
+									records.chunkInjectedModuleIds,
+									key
+								);
+								if (injectedIds !== undefined) {
+									for (const id of injectedIds) {
+										const module = allModules.get(id);
+										if (
+											module === undefined ||
+											injected.has(module) ||
+											chunkGraph.isModuleInChunk(module, currentChunk)
+										) {
+											continue;
+										}
+										for (const chunk of chunkGraph.getModuleChunksIterable(
+											module
+										)) {
+											if (
+												intersectRuntime(chunk.runtime, newRuntime) !==
+												undefined
+											) {
+												inject(module, chunk, false);
+												break;
+											}
+										}
+									}
+								}
+								if (injected.size > 0) {
+									injectedModules.set(currentChunk, injected);
+								}
+								newRuntimeModules = [
+									...chunkGraph.getChunkRuntimeModulesIterable(currentChunk)
+								].filter(
+									(module) =>
+										module.shouldHotUpdate() &&
+										updatedModules.has(module, currentChunk)
+								);
+								const fullHashModules =
+									chunkGraph.getChunkFullHashModulesIterable(currentChunk);
+								newFullHashModules =
+									fullHashModules &&
+									[...fullHashModules].filter((module) =>
+										updatedModules.has(module, currentChunk)
+									);
+								const dependentHashModules =
+									chunkGraph.getChunkDependentHashModulesIterable(currentChunk);
+								newDependentHashModules =
+									dependentHashModules &&
+									[...dependentHashModules].filter((module) =>
+										updatedModules.has(module, currentChunk)
+									);
+								removedFromRuntime = subtractRuntime(oldRuntime, newRuntime);
+							} else {
+								// chunk has completely removed
+								chunkId = `${Number(key)}` === key ? Number(key) : key;
+								removedFromRuntime = oldRuntime;
+								newRuntime = oldRuntime;
+							}
+							if (removedFromRuntime) {
+								// chunk was removed from some runtimes
+								forEachRuntime(removedFromRuntime, (runtime) => {
+									const item =
+										/** @type {HotUpdateMainContentByRuntimeItem} */
+										(
+											hotUpdateMainContentByRuntime.get(
+												/** @type {string} */ (runtime)
+											)
+										);
+									item.removedChunkIds.add(/** @type {ChunkId} */ (chunkId));
+								});
+								// dispose modules from the chunk in these runtimes
+								// where they are no longer in this runtime
+								for (const module of remainingModules) {
+									const moduleKey = `${key}|${module.identifier()}`;
+									const oldHash = records.chunkModuleHashes[moduleKey];
+									const runtimes = chunkGraph.getModuleRuntimes(module);
+									if (oldRuntime === newRuntime && runtimes.has(newRuntime)) {
+										// Module is still in the same runtime combination
+										const hash = nonCodeGeneratedModules.has(module, newRuntime)
+											? chunkGraph.getModuleHash(module, newRuntime)
+											: codeGenerationResults.getHash(module, newRuntime);
+										if (hash !== oldHash) {
+											if (module.is("runtime")) {
+												newRuntimeModules = newRuntimeModules || [];
+												newRuntimeModules.push(module);
+											} else {
+												newModules = newModules || [];
+												newModules.push(module);
+											}
+										}
+									} else {
+										// module is no longer in this runtime combination
+										forEachRuntime(removedFromRuntime, (runtime) => {
+											const item =
+												/** @type {HotUpdateMainContentByRuntimeItem} */ (
+													hotUpdateMainContentByRuntime.get(
+														/** @type {string} */ (runtime)
+													)
+												);
+											// Module still in this runtime via another chunk: force-load one so
+											// it keeps an installed owner instead of being disposed (lost updates).
+											const stillInRuntime = [...runtimes].some(
+												(moduleRuntime) =>
+													typeof moduleRuntime === "string"
+														? moduleRuntime === runtime
+														: moduleRuntime !== undefined &&
+															moduleRuntime.has(/** @type {string} */ (runtime))
+											);
+											if (stillInRuntime) {
+												for (const moduleChunk of chunkGraph.getModuleChunksIterable(
+													module
+												)) {
+													const chunkRuntime = moduleChunk.runtime;
+													const inRuntime =
+														typeof chunkRuntime === "string"
+															? chunkRuntime === runtime
+															: chunkRuntime !== undefined &&
+																chunkRuntime.has(
+																	/** @type {string} */ (runtime)
+																);
+													if (inRuntime) {
+														item.forceLoadChunkIds.add(
+															/** @type {ChunkId} */ (moduleChunk.id)
+														);
+														break;
+													}
+												}
+												return;
+											}
+											item.removedModules.add(module);
+										});
+									}
+								}
+							}
+							if (
+								(newModules && newModules.length > 0) ||
+								(newRuntimeModules && newRuntimeModules.length > 0)
+							) {
+								const hotUpdateChunk = new HotUpdateChunk();
+								if (backCompat) {
+									ChunkGraph.setChunkGraphForChunk(hotUpdateChunk, chunkGraph);
+								}
+								hotUpdateChunk.id = chunkId;
+								hotUpdateChunk.runtime = currentChunk
+									? currentChunk.runtime
+									: newRuntime;
+								if (currentChunk) {
+									for (const group of currentChunk.groupsIterable) {
+										hotUpdateChunk.addGroup(group);
+									}
+								}
+								chunkGraph.attachModules(hotUpdateChunk, newModules || []);
+								chunkGraph.attachRuntimeModules(
+									hotUpdateChunk,
+									newRuntimeModules || []
+								);
+								if (newFullHashModules) {
+									chunkGraph.attachFullHashModules(
+										hotUpdateChunk,
+										newFullHashModules
+									);
+								}
+								if (newDependentHashModules) {
+									chunkGraph.attachDependentHashModules(
+										hotUpdateChunk,
+										newDependentHashModules
+									);
+								}
+								const renderManifest = compilation.getRenderManifest({
+									chunk: hotUpdateChunk,
+									hash: /** @type {string} */ (records.hash),
+									fullHash: /** @type {string} */ (records.hash),
+									outputOptions: compilation.outputOptions,
+									moduleTemplates: compilation.moduleTemplates,
+									dependencyTemplates: compilation.dependencyTemplates,
+									codeGenerationResults: /** @type {CodeGenerationResults} */ (
+										compilation.codeGenerationResults
+									),
+									runtimeTemplate: compilation.runtimeTemplate,
+									moduleGraph: compilation.moduleGraph,
+									chunkGraph
+								});
+								for (const entry of renderManifest) {
+									/** @type {string} */
+									let filename;
+									/** @type {AssetInfo} */
+									let assetInfo;
+									if ("filename" in entry) {
+										filename = entry.filename;
+										assetInfo = entry.info;
+									} else {
+										({ path: filename, info: assetInfo } =
+											getRenderManifestEntryPathWithInfo(compilation, entry));
+									}
+									const source = entry.render();
+									compilation.additionalChunkAssets.push(filename);
+									compilation.emitAsset(filename, source, {
+										hotModuleReplacement: true,
+										...assetInfo
+									});
+									if (currentChunk) {
+										// Booked as `createChunkAssets` books it: an auxiliary file, such
+										// as a changed asset module's file, is not one of the chunk's own.
+										if (entry.auxiliary) {
+											currentChunk.auxiliaryFiles.add(filename);
+										} else {
+											currentChunk.files.add(filename);
+										}
+										compilation.hooks.chunkAsset.call(currentChunk, filename);
+									}
+								}
+								forEachRuntime(newRuntime, (runtime) => {
+									const item =
+										/** @type {HotUpdateMainContentByRuntimeItem} */ (
+											hotUpdateMainContentByRuntime.get(
+												/** @type {string} */ (runtime)
+											)
+										);
+									item.updatedChunkIds.add(/** @type {ChunkId} */ (chunkId));
+								});
+							}
+						}
+						const completelyRemovedModulesArray = [...completelyRemovedModules];
+						/** @type {Map<string, Omit<HotUpdateMainContentByRuntimeItem, "filename">>} */
+						const hotUpdateMainContentByFilename = new Map();
+						for (const {
+							removedChunkIds,
+							removedModules,
+							updatedChunkIds,
+							forceLoadChunkIds,
+							suppliedModules,
+							filename,
+							assetInfo
+						} of hotUpdateMainContentByRuntime.values()) {
+							const old = hotUpdateMainContentByFilename.get(filename);
+							if (
+								old &&
+								(!isSubset(old.removedChunkIds, removedChunkIds) ||
+									!isSubset(old.removedModules, removedModules) ||
+									!isSubset(old.updatedChunkIds, updatedChunkIds) ||
+									!isSubset(old.forceLoadChunkIds, forceLoadChunkIds) ||
+									!isSubset(old.suppliedModules, suppliedModules))
+							) {
+								compilation.warnings.push(
+									new WebpackError(`HotModuleReplacementPlugin
+The configured output.hotUpdateMainFilename doesn't lead to unique filenames per runtime and HMR update differs between runtimes.
+This might lead to incorrect runtime behavior of the applied update.
+To fix this, make sure to include [runtime] in the output.hotUpdateMainFilename option, or use the default config.`)
+								);
+								for (const chunkId of removedChunkIds) {
+									old.removedChunkIds.add(chunkId);
+								}
+								for (const chunkId of removedModules) {
+									old.removedModules.add(chunkId);
+								}
+								for (const chunkId of updatedChunkIds) {
+									old.updatedChunkIds.add(chunkId);
+								}
+								for (const chunkId of forceLoadChunkIds) {
+									old.forceLoadChunkIds.add(chunkId);
+								}
+								for (const module of suppliedModules) {
+									old.suppliedModules.add(module);
+								}
+								continue;
+							}
+							hotUpdateMainContentByFilename.set(filename, {
+								removedChunkIds,
+								removedModules,
+								updatedChunkIds,
+								forceLoadChunkIds,
+								suppliedModules,
+								assetInfo
+							});
+						}
+						for (const [
+							filename,
+							{
+								removedChunkIds,
+								removedModules,
+								updatedChunkIds,
+								forceLoadChunkIds,
+								suppliedModules,
+								assetInfo
+							}
+						] of hotUpdateMainContentByFilename) {
+							/** @type {HotUpdateManifest} */
+							const hotUpdateMainJson = {
+								c: [...updatedChunkIds],
+								r: [...removedChunkIds],
+								m:
+									removedModules.size === 0
+										? completelyRemovedModulesArray
+										: [
+												...completelyRemovedModulesArray,
+												...Array.from(
+													removedModules,
+													(m) =>
+														/** @type {ModuleId} */ (chunkGraph.getModuleId(m))
+												)
+											]
+							};
+
+							// Chunks the client must load so a module whose only loaded chunk
+							// left a runtime keeps an installed owner (see force-load branch).
+							if (forceLoadChunkIds.size > 0) {
+								hotUpdateMainJson.f = [...forceLoadChunkIds];
+							}
+
+							// Unchanged modules shipped only for clients that lack them; one
+							// already cached keeps running instead of being re-executed.
+							if (suppliedModules.size > 0) {
+								hotUpdateMainJson.s = Array.from(
+									suppliedModules,
+									(m) => /** @type {ModuleId} */ (chunkGraph.getModuleId(m))
+								);
+							}
+
+							if (updateManifestHook.isUsed()) {
+								/** @type {Chunk[]} */
+								const chunks = [];
+								for (const chunkId of updatedChunkIds) {
+									const chunk = chunksById.get(`${chunkId}`);
+									if (chunk !== undefined) chunks.push(chunk);
+								}
+								updateManifestHook.call(hotUpdateMainJson, {
+									compilation,
+									chunks,
+									joinedSiblings: (chunk) => getJoinedSiblings(records, chunk)
+								});
+							}
+
+							const source = new RawSource(
+								(filename.endsWith(".json") ? "" : "export default ") +
+									JSON.stringify(hotUpdateMainJson)
+							);
+							compilation.emitAsset(filename, source, {
+								hotModuleReplacement: true,
+								...assetInfo
+							});
+						}
+					}
+				);
+
+				compilation.hooks.additionalTreeRuntimeRequirements.tap(
+					PLUGIN_NAME,
+					(chunk, runtimeRequirements) => {
+						runtimeRequirements.add(RuntimeGlobals.hmrDownloadManifest);
+						runtimeRequirements.add(RuntimeGlobals.hmrDownloadUpdateHandlers);
+						runtimeRequirements.add(RuntimeGlobals.interceptModuleExecution);
+						runtimeRequirements.add(RuntimeGlobals.moduleCache);
+						compilation.addRuntimeModule(
+							chunk,
+							new HotModuleReplacementRuntimeModule()
+						);
+					}
+				);
+
+				compilation.hooks.runtimeRequirementInTree
+					.for(RuntimeGlobals.ensureChunkHandlers)
+					.tap(PLUGIN_NAME, (chunk, runtimeRequirements) => {
+						if (!runtimeRequirements.has(RuntimeGlobals.ensureChunk)) return;
+						compilation.addRuntimeModule(
+							chunk,
+							new HotModuleReplacementChunkGroupRuntimeModule()
+						);
+						compilation.addRuntimeModule(
+							chunk,
+							new HotModuleReplacementChunkVersionsRuntimeModule()
+						);
+						compilation.addRuntimeModule(
+							chunk,
+							new HotModuleReplacementChunkVersionCheckRuntimeModule()
+						);
+					});
+				compilation.hooks.additionalChunkRuntimeRequirements.tap(
+					PLUGIN_NAME,
+					(chunk) => {
+						if (
+							HotModuleReplacementChunkVersionsRuntimeModule.isVersioned(
+								compilation,
+								chunk
+							)
+						) {
+							compilation.addRuntimeModule(
+								chunk,
+								new HotModuleReplacementLoadedChunkVersionRuntimeModule(
+									/** @type {ChunkId} */ (chunk.id)
+								)
+							);
+						}
+					}
+				);
+
+				normalModuleFactory.hooks.parser
+					.for(JAVASCRIPT_MODULE_TYPE_AUTO)
+					.tap(PLUGIN_NAME, (parser, parserOptions) => {
+						applyModuleHot(parser);
+						if (
+							isImportMetaFieldEnabled(parserOptions.importMeta, "webpackHot")
+						) {
+							applyImportMetaHot(parser);
+						}
+					});
+				normalModuleFactory.hooks.parser
+					.for(JAVASCRIPT_MODULE_TYPE_DYNAMIC)
+					.tap(PLUGIN_NAME, (parser) => {
+						applyModuleHot(parser);
+					});
+				normalModuleFactory.hooks.parser
+					.for(JAVASCRIPT_MODULE_TYPE_ESM)
+					.tap(PLUGIN_NAME, (parser, parserOptions) => {
+						if (
+							isImportMetaFieldEnabled(parserOptions.importMeta, "webpackHot")
+						) {
+							applyImportMetaHot(parser);
+						}
+					});
+				normalModuleFactory.hooks.module.tap(PLUGIN_NAME, (module) => {
+					if (module.is("normal")) module.hot = true;
+					return module;
+				});
+
+				NormalModule.getCompilationHooks(compilation).loader.tap(
+					PLUGIN_NAME,
+					(context) => {
+						context.hot = true;
+					}
+				);
+			}
+		);
+	}
+}
+
+/**
+ * Returns the hooks a compilation calls while it renders hot updates.
+ * @param {Compilation} compilation the compilation
+ * @returns {HotModuleReplacementCompilationHooks} the hooks
+ */
+HotModuleReplacementPlugin.getCompilationHooks = createHooksRegistry(
+	createCompilationHooks
+);
+
+module.exports = HotModuleReplacementPlugin;

@@ -1,0 +1,7 @@
+import { RgbaColor } from "../types";
+/**
+ * Parses a valid LAB CSS color function/string
+ * https://www.w3.org/TR/css-color-4/#specifying-lab-lch
+ */
+export declare const parseLabaString: (input: string) => RgbaColor | null;
+export declare const rgbaToLabaString: (rgba: RgbaColor) => string;

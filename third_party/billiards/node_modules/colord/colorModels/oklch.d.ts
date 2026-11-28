@@ -1,0 +1,18 @@
+import { RgbaColor, OklchaColor, InputObject } from "../types";
+/**
+ * Clamps OKLCH axis values as defined in CSS Color Level 4 specs.
+ * https://www.w3.org/TR/css-color-4/#specifying-oklab-oklch
+ */
+export declare const clampOklcha: (lcha: OklchaColor) => OklchaColor;
+export declare const roundOklcha: (lcha: OklchaColor) => OklchaColor;
+export declare const parseOklcha: ({ l, c, h, a, ok }: InputObject) => RgbaColor | null;
+/**
+ * Performs RGB → OKLab → OKLCH color conversion
+ * https://www.w3.org/TR/css-color-4/#color-conversion-code
+ */
+export declare const rgbaToOklcha: (rgba: RgbaColor) => OklchaColor;
+/**
+ * Performs OKLCH → OKLab → RGB color conversion
+ * https://www.w3.org/TR/css-color-4/#color-conversion-code
+ */
+export declare const oklchaToRgba: (lcha: OklchaColor) => RgbaColor;

@@ -55,6 +55,8 @@ NSMicrophoneUsageDescription = "与同房玩家语音聊天需要访问麦克风
 # iOS 同理（当前 iOS 包不带语音库，权限键先留着，将来上 iOS 语音不用再找）。
 [tool.flet.ios.info]
 NSMicrophoneUsageDescription = "与同房玩家语音聊天需要访问麦克风；仅在你手动打开麦克风时采集，音频只发往同一局域网内的对局设备。"
+# ATS 只给本地回环放行（3D 台球的内嵌 WebView 走 127.0.0.1），外网仍要求 HTTPS。
+NSAppTransportSecurity = { NSAllowsArbitraryLoads = false, NSAllowsLocalNetworking = true }
 
 # ---------------------------------------------------------------
 # Flet 打包配置（flet build apk / macos / ipa 都会读这里的 [tool.flet]）
@@ -92,6 +94,12 @@ exclude = [
 # Android：自适应图标底色用主题蓝；不给敏感权限
 [tool.flet.android]
 adaptive_icon_background = "#1976D2"
+# Android 9+ 默认禁止明文 HTTP。3D 台球为了 three.js 能 fetch 本地资源，
+# WebView 必须走进程内 127.0.0.1 静态服务器（file:// 会被 CORS 拦），
+# 没有这一条会直接 net::ERR_CLEARTEXT_NOT_PERMITTED，手机端进不去。
+# 注意：只会放行本机回环服务，游戏本身不请求任何外部明文 HTTP。
+[tool.flet.android.manifest_application]
+usesCleartextTraffic = "true"
 
 # 启动画面配色（跟主题一致，避免闪白）
 [tool.flet.splash]

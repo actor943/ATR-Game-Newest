@@ -1,0 +1,26 @@
+import { RgbaColor, OklabaColor, InputObject } from "../types";
+/**
+ * Clamps OKLab axis values as defined in CSS Color Level 4 specs.
+ * https://www.w3.org/TR/css-color-4/#specifying-oklab-oklch
+ */
+export declare const clampOklaba: (laba: OklabaColor) => OklabaColor;
+export declare const roundOklaba: (laba: OklabaColor) => OklabaColor;
+export declare const parseOklaba: ({ l, a, b, alpha, ok }: InputObject) => RgbaColor | null;
+/**
+ * Performs linear RGB → OKLab color conversion. The math is ported from the
+ * CSS Color Module Level 4 Specification sample code, which recalculated
+ * Björn Ottosson's original matrices to 64-bit precision with a consistent
+ * D65 reference white (so pure white maps to exactly { l: 1, a: 0, b: 0 }).
+ * The linear-sRGB → LMS matrix below is the spec's XYZ→LMS × linear-sRGB→XYZ
+ * product, composed in double precision to skip the intermediate XYZ step.
+ * https://www.w3.org/TR/css-color-4/#color-conversion-code
+ * https://github.com/w3c/csswg-drafts/issues/6642#issuecomment-943521484
+ */
+export declare const rgbaToOklaba: (rgba: RgbaColor) => OklabaColor;
+/**
+ * Performs OKLab → linear RGB color conversion (the inverse of the matrices above,
+ * from the same CSS Color 4 sample code). Round-trips a color to the exact same
+ * byte values, unlike the lower-precision matrices in Ottosson's original post.
+ * https://www.w3.org/TR/css-color-4/#color-conversion-code
+ */
+export declare const oklabaToRgba: (laba: OklabaColor) => RgbaColor;

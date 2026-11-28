@@ -30,6 +30,26 @@ Version: 0.5
 	压一次；同等代价少拆对子；非残局仍不主动烧炸弹
 新增 selftest_ai.py 的 9 个固定残局 / 自对弈用例，并入总自检
 
+0.5-修正（手机端 3D 台球进不去：net::ERR_CLEARTEXT_NOT_PERMITTED）:
+现象：安卓点开任一规则后 WebView 直接显示「无法打开」，报
+	http://127.0.0.1:<port>/index.html?ruletype=eightball 明文流量被拦截
+根因：Android 9+ 默认禁止明文 HTTP；3D 台球为了让 three.js 的 fetch /
+	glTF 资源正常加载，必须走进程内 127.0.0.1 静态服务器（file:// 会被
+	CORS 拦），但打包出的 Manifest 没放开 cleartext
+修正：pyproject.toml 的 [tool.flet.android.manifest_application] 增加
+	usesCleartextTraffic = "true"（只服务本机回环，不开放外网明文 HTTP）；
+	iOS 的 Info.plist 同步给本地网络留 ATS 例外，外网仍要求 HTTPS
+注意：该开关在打包时写进 Manifest，已经装到手机上的旧 APK 必须重新
+	用 gh workflow run build.yml 触发构建、下载新 APK 安装才会生效
+
+0.5-整理（打包统一改用 GitHub CLI）:
+取消本地打包机制：删除 build_dist.sh / build_all.py，README 的「分发
+	构建」改为 gh auth login → gh workflow run build.yml → gh run download
+保留 pyproject.toml 与 .github/workflows/build.yml：GitHub Actions 仍在
+	云端跑 flet build，版本 / 依赖 / Android 明文开关都从 pyproject 读取
+当前云端产物：windows-package / macos-package / android-apk；
+	ipa 尚未接入工作流（需要 Apple 签名证书后再加 job）
+
 0.5-修正（3D 台球右上角 Anon / 误报资源加载失败）:
 Anon 胶囊来自上游 billiards 的联机大厅外链，点击会跳外网并触发 WebView
 	资源错误弹窗；用本地覆盖 CSS 隐藏该胶囊，WebView 同时拦截大厅外链
@@ -60,6 +80,16 @@ Anon 胶囊来自上游 billiards 的联机大厅外链，点击会跳外网并�
 主进程用 127.0.0.1 微型 HTTP 暴露 Flet 窗口 left/top/width/height/最小化，
 	台球窗口经 pywebview js_api 定时 move/resize，并在页面左上角给
 	「返回游戏」按钮关闭子窗口；Wayland 等不允许移动窗口的平台仍可正常玩
+
+0.5-新增（3D 台球中八模式 / 本地双人）:
+菜单新增「中八」卡（ruletype=chinese8），重建上游 TS bundle 并注册
+	Chinese8Ball 规则：维护 1P/2P 两组球与当前击球者，每杆前把当前玩家的
+	球组写进 Session.p1type，命中/犯规/未进球后按中式八球规则换人
+修复「一直只能打 solid」：旧版本地模式只有单个 p1type、没有 P2 翻转，
+	现在首颗合法进球给 1P 定组、另一人自动取相反组，失误或犯规后换手
+未清台先打进 8 号球直接判负；左下角 HUD 显示 1P/2P 球组、分数与当前玩家
+说明：仍不含指球定袋（上游 Outcome 不记录落袋袋口，完整指袋需再改
+	模型 / UI / 网络事件并重建 bundle）
 
 0.5-整理（版本号与文档同步）:
 应用内部版本号 APP_VERSION、主菜单页脚（中 / 英）统一改为 v0.5；

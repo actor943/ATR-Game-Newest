@@ -1,0 +1,5 @@
+/**
+ * Valid CSS <angle> units.
+ * https://developer.mozilla.org/en-US/docs/Web/CSS/angle
+ */
+export declare const ANGLE_UNITS: Record<string, number>;

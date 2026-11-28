@@ -1,0 +1,7 @@
+import { RgbaColor } from "../types";
+/**
+ * Parses a valid OKLab CSS color function/string
+ * https://www.w3.org/TR/css-color-4/#specifying-oklab-oklch
+ */
+export declare const parseOklabaString: (input: string) => RgbaColor | null;
+export declare const rgbaToOklabaString: (rgba: RgbaColor) => string;

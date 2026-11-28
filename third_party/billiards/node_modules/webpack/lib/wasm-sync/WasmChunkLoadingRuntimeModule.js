@@ -1,0 +1,457 @@
+/*
+	MIT License https://www.opensource.org/licenses/mit-license.php
+*/
+
+"use strict";
+
+const RuntimeGlobals = require("../runtime/RuntimeGlobals");
+const RuntimeModule = require("../runtime/RuntimeModule");
+const Template = require("../template/Template");
+const { compareModulesByIdentifier } = require("../util/comparators");
+const {
+	quotedPropertyName,
+	renderObjectWithOwnProto
+} = require("../util/property");
+const { fullHashPathData } = require("../wasm/wasmModuleFilename");
+const WebAssemblyUtils = require("./WebAssemblyUtils");
+
+/** @import { Signature } from "@webassemblyjs/ast" */
+/** @import Chunk from "../graph/Chunk" */
+/** @import ChunkGraph, { ModuleId } from "../graph/ChunkGraph" */
+/** @import Compilation from "../Compilation" */
+/** @import Module, { ReadOnlyRuntimeRequirements } from "../module/Module" */
+/** @import ModuleGraph from "../graph/ModuleGraph" */
+/** @import RuntimeTemplate from "../template/RuntimeTemplate" */
+/** @import { RuntimeSpec } from "../util/runtime" */
+
+// TODO in the next major release: remove the whole folder
+
+// Get all wasm modules
+/**
+ * @param {ModuleGraph} moduleGraph the module graph
+ * @param {ChunkGraph} chunkGraph the chunk graph
+ * @param {Chunk} chunk the chunk
+ * @returns {Module[]} all wasm modules
+ */
+const getAllWasmModules = (moduleGraph, chunkGraph, chunk) => {
+	const wasmModules = chunk.getAllAsyncChunks();
+	/** @type {Module[]} */
+	const array = [];
+	for (const chunk of wasmModules) {
+		for (const m of chunkGraph.getOrderedChunkModulesIterable(
+			chunk,
+			compareModulesByIdentifier
+		)) {
+			if (m.type.startsWith("webassembly")) {
+				array.push(m);
+			}
+		}
+	}
+
+	return array;
+};
+
+/** @typedef {string[]} Declarations */
+
+/**
+ * generates the import object function for a module
+ * @param {ChunkGraph} chunkGraph the chunk graph
+ * @param {Module} module the module
+ * @param {boolean | undefined} mangle mangle imports
+ * @param {Declarations} declarations array where declarations are pushed to
+ * @param {RuntimeSpec} runtime the runtime
+ * @param {RuntimeTemplate} runtimeTemplate the runtime template
+ * @returns {string} source code
+ */
+const generateImportObject = (
+	chunkGraph,
+	module,
+	mangle,
+	declarations,
+	runtime,
+	runtimeTemplate
+) => {
+	const moduleGraph = chunkGraph.moduleGraph;
+	/** @type {Map<string, ModuleId>} */
+	const waitForInstances = new Map();
+	/** @type {{ module: string, name: string, value: string }[]} */
+	const properties = [];
+	const usedWasmDependencies = WebAssemblyUtils.getUsedDependencies(
+		moduleGraph,
+		module,
+		mangle
+	);
+	for (const usedDep of usedWasmDependencies) {
+		const dep = usedDep.dependency;
+		const importedModule = moduleGraph.getModule(dep);
+		const exportName = dep.name;
+		const usedName =
+			importedModule &&
+			moduleGraph
+				.getExportsInfo(importedModule)
+				.getUsedName(exportName, runtime);
+		const description = dep.description;
+		const direct = dep.onlyDirectImport;
+
+		const module = usedDep.module;
+		const name = usedDep.name;
+
+		if (direct) {
+			const instanceVar = `m${waitForInstances.size}`;
+			waitForInstances.set(
+				instanceVar,
+				/** @type {ModuleId} */
+				(chunkGraph.getModuleId(/** @type {Module} */ (importedModule)))
+			);
+			properties.push({
+				module,
+				name,
+				value: `${instanceVar}[${JSON.stringify(usedName)}]`
+			});
+		} else {
+			const params =
+				/** @type {Signature} */
+				(description.signature).params.map(
+					(param, k) => `p${k}${param.valtype}`
+				);
+
+			const mod = `${RuntimeGlobals.moduleCache}[${JSON.stringify(
+				chunkGraph.getModuleId(/** @type {Module} */ (importedModule))
+			)}]`;
+			const modExports = `${mod}.exports`;
+
+			const cache = `wasmImportedFuncCache${declarations.length}`;
+			declarations.push(`var ${cache};`);
+
+			const modCode =
+				/** @type {Module} */
+				(importedModule).type.startsWith("webassembly")
+					? `${mod} ? ${modExports}[${JSON.stringify(usedName)}] : `
+					: "";
+
+			properties.push({
+				module,
+				name,
+				value: `${modCode}${runtimeTemplate.basicFunction(params.join(", "), [
+					`if(${cache} === undefined) ${cache} = ${modExports};`,
+					`return ${cache}[${JSON.stringify(usedName)}](${params});`
+				])}`
+			});
+		}
+	}
+
+	const computedKeys = runtimeTemplate.supportsComputedPropertyKey();
+	/**
+	 * @param {{ name: string, value: string }[]} list properties
+	 * @returns {string} object literal
+	 */
+	const renderProperties = (list) =>
+		Template.asString([
+			"{",
+			Template.indent([
+				list.map((p) => `${quotedPropertyName(p.name)}: ${p.value}`).join(",\n")
+			]),
+			"}"
+		]);
+	/** @type {string[]} */
+	let importObject;
+	if (mangle) {
+		importObject = [
+			`return ${renderObjectWithOwnProto(properties, renderProperties, computedKeys)};`
+		];
+	} else {
+		/** @type {Map<string, { name: string, value: string }[]>} */
+		const propertiesByModule = new Map();
+		for (const p of properties) {
+			let list = propertiesByModule.get(p.module);
+			if (list === undefined) {
+				propertiesByModule.set(p.module, (list = []));
+			}
+			list.push(p);
+		}
+		const modules = Array.from(propertiesByModule, ([module, list]) => ({
+			name: module,
+			value: renderObjectWithOwnProto(list, renderProperties, computedKeys)
+		}));
+		importObject = [
+			`return ${renderObjectWithOwnProto(modules, renderProperties, computedKeys)};`
+		];
+	}
+
+	const moduleIdStringified = JSON.stringify(chunkGraph.getModuleId(module));
+	if (waitForInstances.size === 1) {
+		const moduleId = [...waitForInstances.values()][0];
+		const promise = `installedWasmModules[${JSON.stringify(moduleId)}]`;
+		const variable = [...waitForInstances.keys()][0];
+		return `${moduleIdStringified}: ${runtimeTemplate.returningFunction(
+			`promiseResolve().then(${runtimeTemplate.returningFunction(
+				promise
+			)}).then(${runtimeTemplate.basicFunction(variable, importObject)})`
+		)},`;
+	} else if (waitForInstances.size > 0) {
+		const promises = Array.from(
+			waitForInstances.values(),
+			(id) => `installedWasmModules[${JSON.stringify(id)}]`
+		).join(", ");
+		const variables = Array.from(
+			waitForInstances.keys(),
+			(name, i) => `${name} = array[${i}]`
+		).join(", ");
+		return `${moduleIdStringified}: ${runtimeTemplate.returningFunction(
+			`promiseResolve().then(${runtimeTemplate.returningFunction(
+				`Promise.all([${promises}])`
+			)}).then(${runtimeTemplate.basicFunction("array", [
+				`var ${variables};`,
+				...importObject
+			])})`
+		)},`;
+	}
+	return `${moduleIdStringified}: ${runtimeTemplate.basicFunction(
+		"",
+		importObject
+	)},`;
+};
+
+/**
+ * @typedef {object} WasmChunkLoadingRuntimeModuleOptions
+ * @property {(path: string) => string} generateLoadBinaryCode
+ * @property {boolean=} supportsStreaming
+ * @property {boolean=} mangleImports
+ * @property {ReadOnlyRuntimeRequirements} runtimeRequirements
+ * @property {boolean=} fullHashDigest the binary's name inlines a re-encoded compilation hash
+ */
+
+class WasmChunkLoadingRuntimeModule extends RuntimeModule {
+	/**
+	 * @param {WasmChunkLoadingRuntimeModuleOptions} options options
+	 */
+	constructor({
+		generateLoadBinaryCode,
+		supportsStreaming,
+		mangleImports,
+		runtimeRequirements,
+		fullHashDigest
+	}) {
+		super("wasm chunk loading", RuntimeModule.STAGE_ATTACH);
+		// A re-encoded digest is inlined from the settled hash, so this has to render
+		// again once there is one.
+		if (fullHashDigest) {
+			/** @type {boolean} */
+			this.fullHash = true;
+		}
+		this.generateLoadBinaryCode = generateLoadBinaryCode;
+		/** @type {boolean | undefined} */
+		this.supportsStreaming = supportsStreaming;
+		/** @type {boolean | undefined} */
+		this.mangleImports = mangleImports;
+		/** @type {ReadOnlyRuntimeRequirements} */
+		this._runtimeRequirements = runtimeRequirements;
+	}
+
+	/**
+	 * The `[handlerMap, key]` pairs this module installs onto a chunk handler map
+	 * such as `__webpack_require__.f`, or `null` where it cannot name them.
+	 * @returns {[string, string][] | null} installed chunk handlers (do not mutate)
+	 */
+	getInstalledChunkHandlers() {
+		return [[RuntimeGlobals.ensureChunkHandlers, "wasm"]];
+	}
+
+	/**
+	 * Generates runtime code for this runtime module.
+	 * @returns {string | null} runtime code
+	 */
+	generate() {
+		const fn = RuntimeGlobals.ensureChunkHandlers;
+		const withHmr = this._runtimeRequirements.has(
+			RuntimeGlobals.hmrDownloadUpdateHandlers
+		);
+		const compilation = /** @type {Compilation} */ (this.compilation);
+		const { moduleGraph, outputOptions, runtimeTemplate } = compilation;
+		const chunkGraph = /** @type {ChunkGraph} */ (this.chunkGraph);
+		const chunk = /** @type {Chunk} */ (this.chunk);
+		const wasmModules = getAllWasmModules(moduleGraph, chunkGraph, chunk);
+		const { mangleImports } = this;
+		/** @type {Declarations} */
+		const declarations = [];
+		const importObjects = wasmModules.map((module) =>
+			generateImportObject(
+				chunkGraph,
+				module,
+				mangleImports,
+				declarations,
+				chunk.runtime,
+				runtimeTemplate
+			)
+		);
+		const chunkModuleIdMap = chunkGraph.getChunkModuleIdMap(chunk, (m) =>
+			m.type.startsWith("webassembly")
+		);
+		/**
+		 * @param {string} content content
+		 * @returns {string} created import object
+		 */
+		const createImportObject = (content) =>
+			mangleImports
+				? `{ ${JSON.stringify(WebAssemblyUtils.MANGLED_MODULE)}: ${content} }`
+				: content;
+		// Opt-in fallback to non-streaming when the server serves wasm with a wrong MIME type.
+		const streamingFallback = outputOptions.wasmStreamingFallback;
+		const streamingMimeFallbackWarning =
+			'console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\\n", e);';
+		const wasmModuleSrcPath = compilation.getPath(
+			JSON.stringify(outputOptions.webassemblyModuleFilename),
+			{
+				...fullHashPathData(compilation),
+				module: {
+					id: '" + wasmModuleId + "',
+					hash: `" + ${JSON.stringify(
+						chunkGraph.getChunkModuleRenderedHashMap(chunk, (m) =>
+							m.type.startsWith("webassembly")
+						)
+					)}[chunkId][wasmModuleId] + "`,
+					hashWithLength(length) {
+						return `" + ${JSON.stringify(
+							chunkGraph.getChunkModuleRenderedHashMap(
+								chunk,
+								(m) => m.type.startsWith("webassembly"),
+								length
+							)
+						)}[chunkId][wasmModuleId] + "`;
+					}
+				},
+				runtime: chunk.runtime
+			}
+		);
+
+		const bf = runtimeTemplate.basicFunction.bind(runtimeTemplate);
+		const rf = runtimeTemplate.returningFunction.bind(runtimeTemplate);
+		const arrayBuffer = rf("x.arrayBuffer()", "x");
+		const compileBytes = rf("WebAssembly.compile(bytes)", "bytes");
+		const instantiateBytes = rf(
+			`WebAssembly.instantiate(bytes, ${createImportObject("importObject")})`,
+			"bytes"
+		);
+		const instantiateItems = rf(
+			`WebAssembly.instantiate(items[0], ${createImportObject("items[1]")})`,
+			"items"
+		);
+
+		const stateExpression = withHmr
+			? `${RuntimeGlobals.hmrRuntimeStatePrefix}_wasm`
+			: undefined;
+
+		return Template.asString([
+			"// object to store loaded and loading wasm modules",
+			`var installedWasmModules = ${
+				stateExpression ? runtimeTemplate.assignOr(stateExpression, "{}") : "{}"
+			};`,
+			"",
+			// Delays reading the installed wasm module promises by a microtask.
+			// Sorting them instead is not always possible - modules split across
+			// chunks have no order - so the delay is what is relied on.
+			"function promiseResolve() { return Promise.resolve(); }",
+			"",
+			Template.asString(declarations),
+			"var wasmImportObjects = {",
+			Template.indent(importObjects),
+			"};",
+			"",
+			`var wasmModuleMap = ${JSON.stringify(
+				chunkModuleIdMap,
+				undefined,
+				"\t"
+			)};`,
+			"",
+			"// object with all WebAssembly.instance exports",
+			`${RuntimeGlobals.wasmInstances} = {};`,
+			"",
+			"// Fetch + compile chunk loading for webassembly",
+			`${fn}.wasm = ${bf("chunkId, promises", [
+				"",
+				"var wasmModules = wasmModuleMap[chunkId] || [];",
+				"",
+				`wasmModules.forEach(${bf("wasmModuleId", [
+					"var installedWasmModuleData = installedWasmModules[wasmModuleId];",
+					"",
+					'// a Promise means "currently loading" or "already loaded".',
+					"if(installedWasmModuleData)",
+					Template.indent(["promises.push(installedWasmModuleData);"]),
+					"else {",
+					Template.indent([
+						"var importObject = wasmImportObjects[wasmModuleId]();",
+						`var req = ${this.generateLoadBinaryCode(wasmModuleSrcPath)};`,
+						"var promise;",
+						this.supportsStreaming
+							? streamingFallback
+								? Template.asString([
+										"if(importObject && typeof importObject.then === 'function' && typeof WebAssembly.compileStreaming === 'function') {",
+										Template.indent([
+											`promise = req.then(${bf("res", [
+												`return Promise.all([WebAssembly.compileStreaming(res), importObject]).then(${instantiateItems}, ${bf(
+													"e",
+													[
+														'if(res.headers.get("Content-Type") !== "application/wasm") {',
+														Template.indent([
+															streamingMimeFallbackWarning,
+															`return Promise.all([res.arrayBuffer().then(${compileBytes}), importObject]).then(${instantiateItems});`
+														]),
+														"}",
+														"throw e;"
+													]
+												)});`
+											])});`
+										]),
+										"} else if(typeof WebAssembly.instantiateStreaming === 'function') {",
+										Template.indent([
+											`promise = req.then(${bf("res", [
+												`return WebAssembly.instantiateStreaming(res, ${createImportObject(
+													"importObject"
+												)}).then(undefined, ${bf("e", [
+													'if(res.headers.get("Content-Type") !== "application/wasm") {',
+													Template.indent([
+														streamingMimeFallbackWarning,
+														`return res.arrayBuffer().then(${instantiateBytes});`
+													]),
+													"}",
+													"throw e;"
+												])});`
+											])});`
+										])
+									])
+								: Template.asString([
+										"if(importObject && typeof importObject.then === 'function' && typeof WebAssembly.compileStreaming === 'function') {",
+										Template.indent([
+											`promise = Promise.all([WebAssembly.compileStreaming(req), importObject]).then(${instantiateItems});`
+										]),
+										"} else if(typeof WebAssembly.instantiateStreaming === 'function') {",
+										Template.indent([
+											`promise = WebAssembly.instantiateStreaming(req, ${createImportObject(
+												"importObject"
+											)});`
+										])
+									])
+							: Template.asString([
+									"if(importObject && typeof importObject.then === 'function') {",
+									Template.indent([
+										`promise = Promise.all([req.then(${arrayBuffer}).then(${compileBytes}), importObject]).then(${instantiateItems});`
+									])
+								]),
+						"} else {",
+						Template.indent([
+							`promise = req.then(${arrayBuffer}).then(${instantiateBytes});`
+						]),
+						"}",
+						`promises.push(installedWasmModules[wasmModuleId] = promise.then(${rf(
+							`${RuntimeGlobals.wasmInstances}[wasmModuleId] = (res.instance || res).exports`,
+							"res"
+						)}));`
+					]),
+					"}"
+				])});`
+			])};`
+		]);
+	}
+}
+
+module.exports = WasmChunkLoadingRuntimeModule;

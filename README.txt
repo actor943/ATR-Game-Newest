@@ -135,35 +135,30 @@ ATR Game V0.5
 	游玩记录（主页第三扇门）把上述 logs/ 下**所有游戏**的记录汇总显示，
 		还能按游戏筛选；各游戏子菜单里的「历史记录」只看自己那一份
 
-7. 分发构建（apk / app / ipa）
-	一键脚本：./build_dist.sh apk | app | ipa | all，产物统一放在 dist/
-	等价手动命令：
-		./.venv/bin/python -c "import sys;sys.argv[0]='flet';from flet.cli import main;main()" \
-			build apk --yes
-	打包运行时（0.4.10 内置音乐后）：仍按 flet 默认选 Python 3.14；
+7. 分发构建（GitHub Actions）
+	本项目不再使用本地打包脚本（build_dist.sh / build_all.py 已删除），
+	统一用 GitHub CLI 触发云端工作流。首次使用先登录：
+		gh auth login
+	触发构建（在项目根目录执行；默认取 main 分支）：
+		gh workflow run build.yml --ref main
+	查看运行状态（拿最近一次的 run id）：
+		gh run list --workflow build.yml --limit 3
+	下载产物到 dist/（把 <run-id> 换成上一步查到的 ID）：
+		gh run download <run-id> -D dist
+	工作流定义在 .github/workflows/build.yml，当前产物三类：
+		windows-package / macos-package / android-apk
+		（ipa 尚未接入，需要 Apple 签名证书后再加 job）
+	打包内容由 pyproject.toml 决定：flet 版本与依赖、应用名 / 包名、
+		Android usesCleartextTraffic（3D 台球走 127.0.0.1 本地服务器）等；
+		改版本或依赖只改 pyproject.toml + requirements.txt，再触发工作流。
+	打包运行时仍按 flet 默认选 Python 3.14，源码运行支持 3.10+；
 		音乐全平台统一用官方 flet-audio 扩展（Flutter audioplayers），
-		Windows / macOS / Android / iOS 都能播放 / 暂停 / 调音量 /
-		拖进度；桌面另保留 pygame / 系统音频作兜底。源码运行支持 3.10+
-	各平台还差什么（本机 2026-10-17 实测）：
-		apk / aab：flet 会自动装 Flutter + JDK17 + AndroidSDK，
-			但 GitHub 在国内不通，JDK 要先走镜像放好：
-				curl -o /tmp/jdk.tar.gz "https://mirrors.huaweicloud.com/adoptium/17/jdk/aarch64/macOS/OpenJDK17U-jdk_aarch64_mac_hotspot_17.0.13_11.tar.gz"
-				mkdir -p ~/java/17.0.13+11 && tar -xzf /tmp/jdk.tar.gz -C ~/java/17.0.13+11 --strip-components=1
-				export JAVA_HOME=~/java/17.0.13+11/Contents/Home
-			Flutter 也可预先装好（flet 发现 ~/flutter/3.41.7 存在就跳过下载），
-				国内用 storage.flutter-io.cn 镜像，比 Google CDK 快二十多倍；
-				注意 Flutter arm64 压缩包有 2.15 GB，磁盘要留够
-		app：还需要**完整 Xcode**（App Store 安装，约 10GB）；
-			本机只有 Command Line Tools，打不出 .app
-		ipa：还需要 Xcode + CocoaPods + Apple 开发者账号签名
-			（--ios-team-id / --ios-export-method / 证书；没有账号只能出未签名包，
-			 未签名 ipa 装不到非越狱设备上）
+		桌面另保留 pygame / 系统音频作兜底
 	资源与图标约定（改代码前先读）：
 		牌图在项目根 assets/cards/，代码里用**相对 assets 根**的路径
 			（如 "cards/10 of hearts.png"），不要加 assets/ 前缀
 		应用图标是 assets/icon.png（1024×1024），flet build 靠它自动生成
-			各平台图标；assets/Songs 是个人音乐，已在 pyproject 的 exclude
-			里排除，不会进安装包
+			各平台图标；assets/songs 的音乐随所有平台安装包一起分发
 
 8. 代码结构
 	app.py				应用入口（注册路由、配置 Page）

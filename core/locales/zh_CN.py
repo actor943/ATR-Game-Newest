@@ -171,6 +171,8 @@ STRINGS: dict[str, str] = {
     "billiards3d.nineball.desc": "先碰最小号球，9 号入袋即胜",
     "billiards3d.eightball": "八球 8-Ball",
     "billiards3d.eightball.desc": "分组清台后打 8 号球",
+    "billiards3d.chinese8": "中八",
+    "billiards3d.chinese8.desc": "中式八球简化规则：未清台先打进 8 号球判负（不含指球定袋）",
     "billiards3d.threecushion": "三库开伦",
     "billiards3d.threecushion.desc": "母球需先吃三库，考验走位",
     "billiards3d.snooker": "斯诺克",

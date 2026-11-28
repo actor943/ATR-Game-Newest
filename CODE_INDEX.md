@@ -20,7 +20,7 @@
 
 | 层 | 目录 | 说明 |
 | --- | --- | --- |
-| 入口层 | `app.py` `main.py` `build_all.py` | 起 Flet 页面、注册路由、构建安装包 |
+| 入口层 | `app.py` `main.py` | 起 Flet 页面、注册路由；打包统一走 GitHub Actions |
 | 框架层 | `core/` | 路由、主题、界面包、国际化、联机、历史记录……**与具体游戏无关** |
 | 游戏层 | `games/` | 每个游戏一个子包，通过 `GamePlugin` 注册菜单与路由 |
 | 规则层 | `games/guandan/`（纯逻辑） | 掼蛋的牌、牌型、引擎、进贡、AI —— **不依赖 flet** |
@@ -34,13 +34,13 @@
 
 ## 二、文件分类速查
 
-### A. 入口与构建（3 个）
+### A. 入口与云端构建（2 个 Python 文件 + 1 个工作流）
 
 | 文件 | 行数 | 作用 |
 | --- | --- | --- |
 | `app.py` | 77 | 应用入口：配置 Flet 页面尺寸、注册核心路由（含 0.4.9 新增的「游玩记录」）、启动路由。`import games` 会触发各游戏插件注册。 |
 | `main.py` | 26 | `python -m main` 的启动脚本（桌面端）。 |
-| `build_all.py` | 86 | 打包脚本：把源码打成 macOS/Windows 可执行程序与安装包。 |
+| `.github/workflows/build.yml` | — | GitHub Actions：windows / macos / apk 构建与制品上传；用 `gh workflow run build.yml` 触发，本地不再保留打包脚本。 |
 
 ### B. 框架层 · 路由与注册（2 个）
 

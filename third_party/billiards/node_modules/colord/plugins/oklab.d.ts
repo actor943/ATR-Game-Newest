@@ -1,0 +1,24 @@
+import { OklabaColor } from "../types";
+import { Plugin } from "../extend";
+declare module "../colord" {
+    interface Colord {
+        /**
+         * Converts a color to OKLab color space and returns an object.
+         * The object carries an `ok: true` marker that distinguishes it
+         * from a CIE LAB object (both use the same `l`/`a`/`b` channel keys).
+         * https://bottosson.github.io/posts/oklab/
+         */
+        toOklab(): OklabaColor;
+        /**
+         * Converts a color to OKLab color space and returns a string.
+         * https://developer.mozilla.org/en-US/docs/Web/CSS/color_value/oklab
+         */
+        toOklabString(): string;
+    }
+}
+/**
+ * A plugin adding support for OKLab color space.
+ * https://bottosson.github.io/posts/oklab/
+ */
+declare const oklabPlugin: Plugin;
+export default oklabPlugin;

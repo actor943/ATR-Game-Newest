@@ -1,0 +1,35 @@
+/*
+	MIT License https://www.opensource.org/licenses/mit-license.php
+	Author Sean Larkin @thelarkinn
+*/
+
+"use strict";
+
+/**
+ * Returns the formatted size.
+ * @param {number=} size the size in bytes
+ * @returns {string} the formatted size
+ */
+const formatSize = (size) => {
+	if (typeof size !== "number" || Number.isNaN(size) === true) {
+		return "unknown size";
+	}
+
+	if (size <= 0) {
+		return "0 bytes";
+	}
+
+	const abbreviations = ["bytes", "KiB", "MiB", "GiB", "TiB", "PiB"];
+	// clamp lower and upper index bounds to stay in table
+	const index = Math.max(
+		0,
+		Math.min(
+			Math.floor(Math.log(size) / Math.log(1024)),
+			abbreviations.length - 1
+		)
+	);
+
+	return `${Number((size / 1024 ** index).toPrecision(3))} ${abbreviations[index]}`;
+};
+
+module.exports = formatSize;

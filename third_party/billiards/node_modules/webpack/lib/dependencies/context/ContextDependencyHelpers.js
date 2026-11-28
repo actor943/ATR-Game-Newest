@@ -1,0 +1,340 @@
+/*
+	MIT License https://www.opensource.org/licenses/mit-license.php
+	Author Tobias Koppers @sokra
+*/
+
+"use strict";
+
+const { NodeType } = require("../../javascript/syntax").parser;
+const { parseResource } = require("../../util/identifier");
+
+/** @import { Expression } from "estree" */
+/**
+ * @import {
+ * 	JavascriptParserOptions
+ * } from "../../../declarations/WebpackOptions"
+ */
+/** @import BasicEvaluatedExpression from "../../javascript/BasicEvaluatedExpression" */
+/** @import JavascriptParser, { Range } from "../../javascript/JavascriptParser" */
+/** @import { SyntaxTree } from "../../javascript/syntax-parser" */
+/**
+ * @import ContextDependency, {
+ * 	ContextDependencyOptions,
+ * 	Replaces
+ * } from "./ContextDependency"
+ */
+
+/**
+ * Escapes regular expression metacharacters.
+ *
+ * `-` is intentionally left unescaped: outside a character class it is a
+ * literal, and the quoted string is only ever concatenated between anchors
+ * (never inside `[...]`). Escaping it as `\-` would also be an invalid escape
+ * under the `u`/`v` flags, which `getWrappedContextFlags` now preserves - so
+ * e.g. `` import(`./dir/module-${x}.js`) `` with a Unicode `wrappedContextRegExp`
+ * would throw when the matcher is rebuilt.
+ * @param {string} str String to quote
+ * @returns {string} Escaped string
+ */
+const quoteMeta = (str) => str.replace(/[[\]\\/{}()*+?.^$|]/g, "\\$&");
+
+/**
+ * Returns the flags of a wrapped context RegExp, minus the stateful `g`/`y`
+ * flags, so the rebuilt matcher keeps `i`/`m`/`s`/`u` but stays safe to reuse
+ * across ContextModuleFactory's per-candidate `regExp.test()` calls.
+ * @param {RegExp} regExp the user's wrappedContextRegExp
+ * @returns {string} flags to apply to the rebuilt RegExp
+ */
+const getWrappedContextFlags = (regExp) => regExp.flags.replace(/[gy]/g, "");
+
+/**
+ * Returns `text` as source for the inside of a template literal, so the text
+ * keeps its value and cannot end the literal or open a substitution.
+ * @param {string} text the cooked or raw text of a quasi
+ * @param {"cooked" | "raw"} kind `"raw"` when the literal is tagged with `String.raw`
+ * @returns {string} source text to write between the literal's backticks
+ */
+const toTemplateLiteralText = (text, kind) => {
+	if (kind === "cooked") {
+		return JSON.stringify(text)
+			.slice(1, -1)
+			.replace(/`|\$\{/g, "\\$&");
+	}
+	// `String.raw` keeps every backslash, so text it can't hold verbatim
+	// goes in as a substitution instead.
+	return /`|\$\{|\\$/.test(text) ? `\${${JSON.stringify(text)}}` : text;
+};
+
+/**
+ * Split context from prefix.
+ * @param {string} prefix prefix
+ * @returns {{ prefix: string, context: string }} result
+ */
+const splitContextFromPrefix = (prefix) => {
+	const idx = prefix.lastIndexOf("/");
+	let context = ".";
+	if (idx >= 0) {
+		context = prefix.slice(0, idx);
+		prefix = `.${prefix.slice(idx)}`;
+	}
+	return {
+		context,
+		prefix
+	};
+};
+
+/** @typedef {Partial<Omit<ContextDependencyOptions, "resource">>} PartialContextDependencyOptions */
+/** @typedef {{ new (options: ContextDependencyOptions, range: Range, valueRange: Range, ...args: never[]): ContextDependency }} ContextDependencyConstructor */
+
+/**
+ * Defines the get additional dep args type used by this module.
+ * @template T
+ * @typedef {T extends new (options: ContextDependencyOptions, range: Range, valueRange: Range, ...remains: infer R) => ContextDependency ? R : []} GetAdditionalDepArgs
+ */
+
+/**
+ * Returns the created Dependency.
+ * @template {ContextDependencyConstructor} T
+ * @param {T} Dep the Dependency class
+ * @param {Range} range source range
+ * @param {BasicEvaluatedExpression} param context param
+ * @param {Expression | number} expr the expression, or its node id in the tree walk
+ * @param {Pick<JavascriptParserOptions, `${"expr" | "wrapped"}Context${"Critical" | "Recursive" | "RegExp"}` | "exprContextRequest">} options options for context creation
+ * @param {PartialContextDependencyOptions} contextOptions options for the ContextModule
+ * @param {JavascriptParser} parser the parser
+ * @param {GetAdditionalDepArgs<T>} depArgs depArgs
+ * @returns {ContextDependency} the created Dependency
+ */
+module.exports.create = (
+	Dep,
+	range,
+	param,
+	expr,
+	options,
+	contextOptions,
+	parser,
+	...depArgs
+) => {
+	if (param.isTemplateString()) {
+		const quasis = /** @type {BasicEvaluatedExpression[]} */ (param.quasis);
+		const prefixRaw = /** @type {string} */ (quasis[0].string);
+		const postfixRaw =
+			/** @type {string} */
+			(quasis.length > 1 ? quasis[quasis.length - 1].string : "");
+
+		const valueRange = /** @type {Range} */ (param.range);
+		const { context, prefix } = splitContextFromPrefix(prefixRaw);
+		const {
+			path: postfix,
+			query,
+			fragment
+		} = parseResource(postfixRaw, parser);
+
+		// When there are more than two quasis, the generated RegExp can be more precise
+		// We join the quasis with the expression regexp
+		const innerQuasis = quasis.slice(1, -1);
+		const innerRegExp =
+			/** @type {RegExp} */ (options.wrappedContextRegExp).source +
+			innerQuasis
+				.map(
+					(q) =>
+						quoteMeta(/** @type {string} */ (q.string)) +
+						/** @type {RegExp} */ (options.wrappedContextRegExp).source
+				)
+				.join("");
+
+		// The template's quasis become the literal anchors of the regexp and its
+		// expressions the gaps between them, so `./context/pre${e}inner${e}post`
+		// matches `/^\.\/pre.*inner.*post$/` under the context `./context`.
+		const regExp = new RegExp(
+			`^${quoteMeta(prefix)}${innerRegExp}${quoteMeta(postfix)}$`,
+			getWrappedContextFlags(
+				/** @type {RegExp} */ (options.wrappedContextRegExp)
+			)
+		);
+		const dep = new Dep(
+			{
+				request: context + query + fragment,
+				recursive: /** @type {boolean} */ (options.wrappedContextRecursive),
+				regExp,
+				mode: "sync",
+				...contextOptions
+			},
+			range,
+			valueRange,
+			...depArgs
+		);
+		dep.loc = parser.getLocation(expr);
+
+		/** @type {Replaces} */
+		const replaces = [];
+		const parts = /** @type {BasicEvaluatedExpression[]} */ (param.parts);
+
+		for (const [i, part] of parts.entries()) {
+			if (i % 2 === 0) {
+				// Quasis or merged quasi
+				let range = /** @type {Range} */ (part.range);
+				const kind = /** @type {"cooked" | "raw"} */ (param.templateStringKind);
+				let value = toTemplateLiteralText(
+					/** @type {string} */ (part.string),
+					kind
+				);
+				if (i === 0) {
+					// prefix
+					value = toTemplateLiteralText(prefix, kind);
+					range = [
+						/** @type {Range} */ (param.range)[0],
+						/** @type {Range} */ (part.range)[1]
+					];
+					value = (kind === "cooked" ? "`" : "String.raw`") + value;
+				} else if (i === parts.length - 1) {
+					// postfix
+					value = toTemplateLiteralText(postfix, kind);
+					range = [
+						/** @type {Range} */ (part.range)[0],
+						/** @type {Range} */ (param.range)[1]
+					];
+					value = `${value}\``;
+				} else if (
+					part.expression &&
+					part.expression.type === "TemplateElement" &&
+					part.expression.value.raw === value
+				) {
+					// Shortcut when it's a single quasi and doesn't need to be replaced
+					continue;
+				}
+				replaces.push({
+					range,
+					value
+				});
+			} else {
+				// Expression
+				// the node id walks it in place, without making its object
+				const node = part.expressionNode;
+				parser.walkExpression(
+					node !== 0 ? node : /** @type {Expression} */ (part.expression)
+				);
+			}
+		}
+
+		dep.replaces = replaces;
+		dep.critical =
+			options.wrappedContextCritical &&
+			"a part of the request of a dependency is an expression";
+		return dep;
+	} else if (
+		param.isWrapped() &&
+		((param.prefix && param.prefix.isString()) ||
+			(param.postfix && param.postfix.isString()))
+	) {
+		const prefixRaw =
+			/** @type {string} */
+			(param.prefix && param.prefix.isString() ? param.prefix.string : "");
+		const postfixRaw =
+			/** @type {string} */
+			(param.postfix && param.postfix.isString() ? param.postfix.string : "");
+		const prefixRange =
+			param.prefix && param.prefix.isString() ? param.prefix.range : null;
+		const postfixRange =
+			param.postfix && param.postfix.isString() ? param.postfix.range : null;
+		const valueRange = /** @type {Range} */ (param.range);
+		const { context, prefix } = splitContextFromPrefix(prefixRaw);
+		const {
+			path: postfix,
+			query,
+			fragment
+		} = parseResource(postfixRaw, parser);
+		const regExp = new RegExp(
+			`^${quoteMeta(prefix)}${
+				/** @type {RegExp} */ (options.wrappedContextRegExp).source
+			}${quoteMeta(postfix)}$`,
+			getWrappedContextFlags(
+				/** @type {RegExp} */ (options.wrappedContextRegExp)
+			)
+		);
+		const dep = new Dep(
+			{
+				request: context + query + fragment,
+				recursive: /** @type {boolean} */ (options.wrappedContextRecursive),
+				regExp,
+				mode: "sync",
+				...contextOptions
+			},
+			range,
+			valueRange,
+			...depArgs
+		);
+		dep.loc = parser.getLocation(expr);
+		/** @type {Replaces} */
+		const replaces = [];
+		if (prefixRange) {
+			replaces.push({
+				range: prefixRange,
+				value: JSON.stringify(prefix)
+			});
+		}
+		if (postfixRange) {
+			replaces.push({
+				range: postfixRange,
+				value: JSON.stringify(postfix)
+			});
+		}
+		dep.replaces = replaces;
+		dep.critical =
+			options.wrappedContextCritical &&
+			"a part of the request of a dependency is an expression";
+
+		if (parser && param.wrappedInnerExpressions) {
+			for (const part of param.wrappedInnerExpressions) {
+				const node = part.expressionNode;
+				if (node !== 0) {
+					parser.walkExpression(node);
+				} else if (part.expression) {
+					parser.walkExpression(
+						/** @type {Expression} */
+						(part.expression)
+					);
+				}
+			}
+		}
+
+		return dep;
+	}
+	const dep = new Dep(
+		{
+			request: /** @type {string} */ (options.exprContextRequest),
+			recursive: /** @type {boolean} */ (options.exprContextRecursive),
+			regExp: /** @type {RegExp} */ (options.exprContextRegExp),
+			mode: "sync",
+			...contextOptions
+		},
+		range,
+		/** @type {Range} */ (param.range),
+		...depArgs
+	);
+	dep.loc = parser.getLocation(expr);
+	dep.critical =
+		options.exprContextCritical &&
+		"the request of a dependency is an expression";
+
+	const node = param.expressionNode;
+	// the call's own parentheses are replaced, so `(f(), x)` keeps its own
+	if (
+		node !== 0
+			? /** @type {SyntaxTree} */ (parser._tree).type(node) ===
+				NodeType.SequenceExpression
+			: /** @type {Expression} */ (param.expression).type ===
+				"SequenceExpression"
+	) {
+		const valueRange = /** @type {Range} */ (param.range);
+		dep.replaces = [
+			{ range: [valueRange[0], valueRange[0]], value: "(" },
+			{ range: [valueRange[1], valueRange[1]], value: ")" }
+		];
+	}
+	parser.walkExpression(
+		node !== 0 ? node : /** @type {Expression} */ (param.expression)
+	);
+
+	return dep;
+};

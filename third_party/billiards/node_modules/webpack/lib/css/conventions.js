@@ -1,0 +1,214 @@
+/*
+	MIT License https://www.opensource.org/licenses/mit-license.php
+	Author Gengkun He @ahabhgk
+*/
+
+"use strict";
+
+/**
+ * @import {
+ * 	CssGeneratorExportsConvention
+ * } from "../../declarations/WebpackOptions"
+ */
+// Copy from css-loader
+/**
+ * Preserve camel case.
+ * @param {string} string string
+ * @returns {string} result
+ */
+const preserveCamelCase = (string) => {
+	let result = string;
+	let isLastCharLower = false;
+	let isLastCharUpper = false;
+	let isLastLastCharUpper = false;
+
+	for (let i = 0; i < result.length; i++) {
+		const character = result[i];
+
+		if (isLastCharLower && /\p{Lu}/u.test(character)) {
+			result = `${result.slice(0, i)}-${result.slice(i)}`;
+			isLastCharLower = false;
+			isLastLastCharUpper = isLastCharUpper;
+			isLastCharUpper = true;
+			i += 1;
+		} else if (
+			isLastCharUpper &&
+			isLastLastCharUpper &&
+			/\p{Ll}/u.test(character)
+		) {
+			result = `${result.slice(0, i - 1)}-${result.slice(i - 1)}`;
+			isLastLastCharUpper = isLastCharUpper;
+			isLastCharUpper = false;
+			isLastCharLower = true;
+		} else {
+			isLastCharLower =
+				character.toLowerCase() === character &&
+				character.toUpperCase() !== character;
+			isLastLastCharUpper = isLastCharUpper;
+			isLastCharUpper =
+				character.toUpperCase() === character &&
+				character.toLowerCase() !== character;
+		}
+	}
+
+	return result;
+};
+
+// Copy from css-loader
+/**
+ * Returns result.
+ * @param {string} input input
+ * @returns {string} result
+ */
+module.exports.camelCase = (input) => {
+	let result = input.trim();
+
+	if (result.length === 0) {
+		return "";
+	}
+
+	if (result.length === 1) {
+		return result.toLowerCase();
+	}
+
+	const hasUpperCase = result !== result.toLowerCase();
+
+	if (hasUpperCase) {
+		result = preserveCamelCase(result);
+	}
+
+	return result
+		.replace(/^[_.\- ]+/, "")
+		.toLowerCase()
+		.replace(
+			/[_.\- ]+([\p{Alpha}\p{N}_]|$)/gu,
+			/**
+			 * Upper-cases the character after a separator run.
+			 * @param {string} _ the match
+			 * @param {string} p1 the character after the separators
+			 * @returns {string} the character upper-cased
+			 */
+			(_, p1) => p1.toUpperCase()
+		)
+		.replace(/\d+([\p{Alpha}\p{N}_]|$)/gu, (m) => m.toUpperCase());
+};
+
+/**
+ * Safely stringify an arbitrary value for an error message - falls back to
+ * `String(...)` when JSON.stringify would throw (BigInt, circular, etc.).
+ * @param {string | string[]} value value to stringify
+ * @returns {string} stringified value
+ */
+const safeStringify = (value) => {
+	try {
+		const json = JSON.stringify(value);
+		if (json !== undefined) return json;
+	} catch (_err) {
+		// fall through to String fallback
+	}
+	try {
+		return String(value);
+	} catch (_err) {
+		return "[value cannot be converted to string]";
+	}
+};
+
+/**
+ * Returns results.
+ * @param {string} input input
+ * @param {CssGeneratorExportsConvention | undefined} convention convention
+ * @returns {string[]} results
+ */
+module.exports.cssExportConvention = (input, convention) => {
+	/** @type {Set<string>} */
+	const set = new Set();
+	if (typeof convention === "function") {
+		const result = convention(input);
+		/**
+		 * @param {string} name name returned by the convention function
+		 * @returns {void}
+		 */
+		const validate = (name) => {
+			if (typeof name !== "string" || name.length === 0) {
+				throw new Error(
+					`exportsConvention function must return a non-empty string or an array of non-empty strings, got ${safeStringify(
+						result
+					)}`
+				);
+			}
+		};
+		if (Array.isArray(result)) {
+			if (result.length === 0) {
+				throw new Error(
+					"exportsConvention function returned an empty array; it must return at least one name"
+				);
+			}
+			for (const name of result) {
+				validate(name);
+				set.add(name);
+			}
+		} else {
+			validate(result);
+			set.add(result);
+		}
+	} else {
+		switch (convention) {
+			case "camel-case": {
+				set.add(input);
+				set.add(module.exports.camelCase(input));
+				break;
+			}
+			case "camel-case-only": {
+				set.add(module.exports.camelCase(input));
+				break;
+			}
+			case "dashes": {
+				set.add(input);
+				set.add(module.exports.dashesCamelCase(input));
+				break;
+			}
+			case "dashes-only": {
+				set.add(module.exports.dashesCamelCase(input));
+				break;
+			}
+			case "as-is": {
+				set.add(input);
+				break;
+			}
+		}
+	}
+	return [...set];
+};
+
+// Copy from css-loader
+/**
+ * Returns result.
+ * @param {string} input input
+ * @returns {string} result
+ */
+module.exports.dashesCamelCase = (input) =>
+	input.replace(
+		/-+(\w)/g,
+		/**
+		 * Upper-cases the letter after a dash run.
+		 * @param {string} match the match
+		 * @param {string} firstLetter the letter after the dashes
+		 * @returns {string} the letter upper-cased
+		 */
+		(match, firstLetter) => firstLetter.toUpperCase()
+	);
+
+// The whole run goes, as area `a-start` implies line `a-start-start`; the
+// leading `.` keeps a bare `-start` / `-end` (no area name) whole.
+const GRID_IMPLICIT_LINE_SUFFIX_REGEXP = /.(?:-(?:start|end))+$/;
+
+/**
+ * Gets the grid area a grid name pairs with: area `a` implies lines `a-start` / `a-end` and back, so all three share it.
+ * @see https://www.w3.org/TR/css-grid-2/#implicit-named-lines
+ * @param {string} name grid area or line name
+ * @returns {string} the name without its trailing `-start` / `-end` run
+ */
+module.exports.gridAreaName = (name) => {
+	const match = GRID_IMPLICIT_LINE_SUFFIX_REGEXP.exec(name);
+	return match === null ? name : name.slice(0, match.index + 1);
+};
